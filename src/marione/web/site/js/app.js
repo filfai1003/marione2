@@ -5,7 +5,9 @@ import { api, post, hooks } from './api.js';
 import { refreshState, startPolling, stopPolling, handleError } from './data.js';
 import { toast } from './toast.js';
 import { t, getLang, setLang, LANGS, LANG_NAMES, initialLang } from './i18n.js';
-import { modal, preview } from './ui.js';
+import { preview, popover, closeMenu } from './ui.js';
+import { setMusicEnabled } from './player.js';
+import { playerBar } from './playerbar.js';
 import * as home from './pages/home.js';
 import * as economy from './pages/economy.js';
 import * as soundboard from './pages/soundboard.js';
@@ -13,13 +15,16 @@ import * as music from './pages/music.js';
 import * as entrances from './pages/entrances.js';
 import * as brain from './pages/brain.js';
 import * as settings from './pages/settings.js';
+import * as admin from './pages/admin.js';
 
-// Order = sidebar order. `main` pages are on the mobile bottom bar; the rest go under "More".
+// Order = sidebar order. The four everyday pages are also the phone's bottom tabs; admins get a fifth
+// tab, "Admin", a hub that leads to the admin pages (each tab opens a page, never a menu).
 const PAGES = {
-  home: { emoji: '🛋️', mod: home, main: true },
-  economy: { emoji: '💰', mod: economy, main: true },
-  soundboard: { emoji: '🔊', mod: soundboard, main: true },
-  music: { emoji: '🎵', mod: music, main: true },
+  home: { emoji: '🏠', mod: home },
+  economy: { emoji: '💰', mod: economy },
+  soundboard: { emoji: '🔊', mod: soundboard },
+  music: { emoji: '🎵', mod: music },
+  admin: { emoji: '🛠️', mod: admin, admin: true, hub: true },
   entrances: { emoji: '🎺', mod: entrances, admin: true },
   brain: { emoji: '🧠', mod: brain, admin: true },
   settings: { emoji: '⚙️', mod: settings, admin: true },
@@ -32,19 +37,13 @@ function toggleTheme() {
   const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
   document.documentElement.dataset.theme = next;
   try { localStorage.setItem('marione-theme', next); } catch { /* storage blocked */ }
-  if (shell) syncTheme();
 }
-const syncTheme = () => {
-  const dark = document.documentElement.dataset.theme === 'dark';
-  shell.theme.textContent = dark ? '☀️' : '🌙';
-  shell.theme.setAttribute('aria-label', dark ? t('theme.light') : t('theme.dark'));
-};
 
 // ---------- language ----------
 function langPicker() {
   const sel = h('select', { class: 'lang-pick', 'aria-label': t('lang.label') },
-    LANGS.map((l) => h('option', { value: l, selected: l === getLang() }, l.toUpperCase())));
-  sel.addEventListener('change', () => changeLang(sel.value));
+    LANGS.map((l) => h('option', { value: l, selected: l === getLang() }, LANG_NAMES[l])));
+  sel.addEventListener('change', () => { closeMenu(); changeLang(sel.value); });
   return sel;
 }
 async function changeLang(code) {
@@ -57,8 +56,23 @@ async function changeLang(code) {
   } else if (store.view === 'login') showLogin(store.loginInfo);
 }
 
+// ---------- account menu: who you are, language, theme, log out ----------
+function openAccount(anchor) {
+  const me = store.me;
+  const dark = document.documentElement.dataset.theme === 'dark';
+  popover(anchor, [
+    h('div', { class: 'menu-head' }, avatar(me, 40), h('span', null, h('strong', null, me.name),
+      me.isAdmin ? h('small', null, t('nav.admin')) : null)),
+    h('label', { class: 'menu-row' }, h('span', null, '🌍 ' + t('lang.label')), langPicker()),
+    ['🎨', dark ? t('theme.light') : t('theme.dark'), toggleTheme],
+    ['🚪', t('nav.logout'), () => { location.href = '/auth/logout'; }, 'danger'],
+  ], 'account-menu');
+}
+
 // ---------- simple screens ----------
 function screen(emoji, title, text, action) {
+  if (shell && shell.bar) shell.bar.destroy();
+  document.body.classList.remove('has-player');
   shell = null; current = null; currentKey = null;
   root.replaceChildren(h('main', { class: 'center-screen' }, h('div', { class: 'card login mar-anim-pop' },
     h('div', { class: 'login-lang' }, langPicker()),
@@ -75,46 +89,42 @@ const showNotInGuild = () => screen('🚪', t('guild.title'), t('guild.text'),
 const visible = (p) => !p.admin || (store.me && store.me.isAdmin);
 const label = (k) => t('nav.' + k);
 
-function navLink(k, p) {
-  return h('a', { class: 'nav-item', href: '#/' + k, 'data-k': k },
+function navLink(k, p, cls = 'nav-item') {
+  return h('a', { class: cls, href: '#/' + k, 'data-k': k },
     h('span', { class: 'nav-emoji', 'aria-hidden': 'true' }, p.emoji), h('span', { class: 'nav-label' }, label(k)));
 }
 
-function openMore() {
-  const items = Object.entries(PAGES).filter(([, p]) => !p.main && visible(p));
-  const { close } = modal(t('nav.more'), h('div', { class: 'more-list' },
-    items.map(([k, p]) => h('a', { class: 'more-item', href: '#/' + k, onclick: () => close() },
-      h('span', { 'aria-hidden': 'true' }, p.emoji), h('span', null, label(k)))),
-    h('div', { class: 'more-row' }, h('span', null, '🌍 ' + t('lang.label')), langPicker()),
-    h('a', { class: 'more-item', href: '/auth/logout' }, h('span', { 'aria-hidden': 'true' }, '🚪'), h('span', null, t('nav.logout')))), null, 'sheet');
-}
-
 function buildShell() {
+  if (shell && shell.bar) shell.bar.destroy();
   const entries = Object.entries(PAGES).filter(([, p]) => visible(p));
-  const mainLinks = entries.filter(([, p]) => !p.admin).map(([k, p]) => navLink(k, p));
-  const adminLinks = entries.filter(([, p]) => p.admin).map(([k, p]) => navLink(k, p));
-  const moreBtn = h('button', { type: 'button', class: 'nav-item more-btn', onclick: openMore, 'aria-haspopup': 'dialog' },
-    h('span', { class: 'nav-emoji', 'aria-hidden': 'true' }, '☰'), h('span', { class: 'nav-label' }, t('nav.more')));
+  // Sidebar (wide screens): everyday pages, then the admin pages in their own group.
   const nav = h('nav', { class: 'nav', 'aria-label': t('nav.sections') },
-    mainLinks,
-    adminLinks.length ? h('div', { class: 'nav-group' }, h('span', { class: 'nav-group-label' }, t('nav.admin')), adminLinks) : null,
-    moreBtn,
-    h('div', { class: 'nav-foot' }, h('span', { class: 'script' }, t('nav.bonappetit')), h('a', { class: 'link', href: '/auth/logout' }, t('nav.logout'))));
+    h('a', { class: 'brand', href: '#/home', 'aria-label': t('nav.homeAria') },
+      h('span', { class: 'logo', 'aria-hidden': 'true' }, '🍝'), h('span', { class: 'wordmark' }, 'Marione')),
+    entries.filter(([, p]) => !p.admin).map(([k, p]) => navLink(k, p)),
+    store.me.isAdmin ? h('div', { class: 'nav-group' }, h('span', { class: 'nav-group-label' }, t('nav.admin')),
+      entries.filter(([, p]) => p.admin && !p.hub).map(([k, p]) => navLink(k, p))) : null,
+    h('div', { class: 'nav-foot' }, h('span', { class: 'script' }, t('nav.bonappetit'))));
+  // Bottom tabs (phones).
+  const tabbar = h('nav', { class: 'tabbar', 'aria-label': t('nav.sections') },
+    entries.filter(([, p]) => !p.admin || p.hub).map(([k, p]) => navLink(k, p, 'tab-item')));
   const voice = h('span', { class: 'pill voice' }), coin = h('span', { class: 'coin-val' });
   const offline = h('span', { class: 'offline', title: t('common.offline'), role: 'status', hidden: true });
-  const theme = h('button', { type: 'button', class: 'icon-btn round', onclick: toggleTheme });
   const av = h('span', { class: 'me-av' });
+  const account = h('button', { type: 'button', class: 'account-btn', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
+    'aria-label': t('nav.account'), onclick: (e) => openAccount(e.currentTarget) }, av, offline, h('span', { class: 'chev', 'aria-hidden': 'true' }, '▾'));
   const header = h('header', { class: 'topbar' },
-    h('a', { class: 'brand', href: '#/home', 'aria-label': t('nav.homeAria') }, h('span', { class: 'logo', 'aria-hidden': 'true' }, '🍝'), h('span', { class: 'wordmark' }, 'Marione')),
+    h('a', { class: 'brand mobile-only', href: '#/home', 'aria-label': t('nav.homeAria') }, h('span', { class: 'logo', 'aria-hidden': 'true' }, '🍝')),
     voice, h('span', { class: 'spacer' }),
     h('a', { class: 'pill coin', href: '#/economy/history', title: t('header.coins') }, h('span', { 'aria-hidden': 'true' }, '🪙'), coin),
-    h('span', { class: 'hide-sm' }, langPicker()), theme, h('span', { class: 'me' }, av, offline));
+    account);
   const view = h('main', { class: 'view', id: 'view', tabindex: '-1' });
+  const bar = playerBar();
   const veil = h('div', { class: 'dropveil', hidden: true }, h('div', null, h('span', null, '🎵'), h('strong', null, t('drop.release'))));
-  root.replaceChildren(h('a', { class: 'skip', href: '#view' }, t('common.skip')), h('div', { class: 'app' }, header, nav, view), veil);
-  shell = { nav, voice, coin, theme, av, offline, view, veil, avKey: '' };
+  root.replaceChildren(h('a', { class: 'skip', href: '#view' }, t('common.skip')),
+    h('div', { class: 'app' }, nav, header, view), bar.el, tabbar, veil);
+  shell = { nav, tabbar, voice, coin, av, offline, view, veil, bar, avKey: '' };
   document.documentElement.lang = getLang();
-  syncTheme();
 }
 
 function rebuild() {
@@ -138,7 +148,8 @@ function syncShell() {
   shell.voice.classList.toggle('on', store.inVoice);
   shell.offline.hidden = store.online;
   const k = me.id + me.name + me.avatar;
-  if (shell.avKey !== k) { shell.avKey = k; shell.av.replaceChildren(avatar(me, 40)); shell.av.title = me.name; }
+  if (shell.avKey !== k) { shell.avKey = k; shell.av.replaceChildren(avatar(me, 36)); }
+  if (store.state) setMusicEnabled(!!store.state.modules.music);
 }
 
 // ---------- router: #/page[/sub] ----------
@@ -157,12 +168,20 @@ function route() {
   shell.view.replaceChildren();
   const holder = h('div', { class: 'page mar-anim-pop' });
   shell.view.append(holder);
+  // Admin pages are reached from the Admin hub on phones: give them a way back.
+  if (PAGES[key].admin && !PAGES[key].hub) {
+    holder.append(h('a', { class: 'crumb mobile-only', href: '#/admin' }, '‹ ' + t('nav.admin')));
+  }
   current = PAGES[key].mod.mount(holder, sub);
-  shell.nav.querySelectorAll('.nav-item[data-k]').forEach((a) => {
+  const tabKey = PAGES[key].admin ? 'admin' : key;
+  shell.nav.querySelectorAll('[data-k]').forEach((a) => {
     if (a.dataset.k === key) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
-  shell.nav.querySelector('.more-btn').classList.toggle('active', !PAGES[key].main);
+  shell.tabbar.querySelectorAll('[data-k]').forEach((a) => {
+    if (a.dataset.k === tabKey) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+  });
   document.title = label(key) + ' · Marione';
+  closeMenu();
   window.scrollTo(0, 0);
   if (store.state) current.update();
 }

@@ -4,7 +4,7 @@ import { t } from '../i18n.js';
 import { card, cardTitle, pageHead, tierBadge, progress, historyList, notice } from '../ui.js';
 
 export function mount(root) {
-  const R = { greet: h('div'), main: h('div', { class: 'grid g-main' }), quick: h('div'), hist: h('div') };
+  const R = { greet: h('div'), main: h('div'), quick: h('div'), hist: h('div') };
   root.append(R.greet, R.main, R.quick, R.hist);
 
   function balanceCard(s) {
@@ -17,19 +17,15 @@ export function mount(root) {
         progress(((bal - tier.min) / span) * 100, t('home.progressAria')),
         h('p', null, t('home.missing', { amount: fmt(missing) }), ' ', h('span', { class: 'muted' }, '(' + tier.next.name + ')')));
     }
+    // One card: the balance, the role and its progress, and the rank as a link to the leaderboard.
     return card('balance-card',
-      h('span', { class: 'eyebrow' }, t('home.wallet')),
+      h('div', { class: 'bc-top' },
+        h('span', { class: 'eyebrow' }, t('home.wallet')),
+        h('a', { class: 'rank-chip', href: '#/economy/leaderboard', title: t('home.seeLeaderboard') },
+          h('span', { 'aria-hidden': 'true' }, '🏆'), h('strong', null, s.rank ? '#' + s.rank : '—'),
+          h('small', null, t('home.ofTable', { count: fmt(s.memberCount) })), h('span', { 'aria-hidden': 'true' }, '›'))),
       h('div', { class: 'bignum' }, h('span', { class: 'coin-big', 'aria-hidden': 'true' }, '🪙'), fmt(bal)),
       h('div', { class: 'tier-row' }, tierBadge(tier)), prog);
-  }
-
-  function rankCard(s) {
-    return card('rank-card',
-      h('span', { class: 'eyebrow' }, t('home.position')),
-      h('div', { class: 'bignum rank' }, s.rank ? '#' + s.rank : '—'),
-      h('p', null, t('home.ofTable', { count: fmt(s.memberCount) })),
-      h('a', { class: 'link', href: '#/economy/leaderboard' }, t('home.seeLeaderboard') + ' →'),
-      h('div', { class: 'rank-emoji mar-anim-bob', 'aria-hidden': 'true' }, '🍽️'));
   }
 
   function quick(s) {
@@ -49,7 +45,7 @@ export function mount(root) {
     const eco = s.modules.economy;
     region(R.greet, s.me.name + t('home.hello'), () => pageHead(t('home.hello', { name: s.me.name }), t('home.sub')));
     region(R.main, eco ? JSON.stringify([store.balance, s.tier, s.rank, s.memberCount, t('home.wallet')]) : 'off', () => eco
-      ? [balanceCard(s), rankCard(s)]
+      ? balanceCard(s)
       : notice('🍝', t('eco.pausedTitle'), t('eco.pausedText')));
     region(R.quick, JSON.stringify([s.modules, t('home.qSend')]), () => quick(s));
     const recent = s.history.slice(0, 5);

@@ -227,3 +227,60 @@ export const preview = {
 };
 
 export { fileBase };
+
+// ---- popover menu anchored to a button (Esc, outside click and picking an item close it) ----
+let openMenu = null;
+export function closeMenu() { if (openMenu) { openMenu(); openMenu = null; } }
+/**
+ * items: array of [emoji, label, onClick, cls?] or a DOM node (a custom row); null entries are skipped.
+ */
+export function popover(anchor, items, cls = '') {
+  if (anchor.getAttribute('aria-expanded') === 'true') { closeMenu(); return; }
+  closeMenu();
+  const box = h('div', { class: 'menu ' + cls, role: 'menu' }, items.filter(Boolean).map((it) => {
+    if (it instanceof Node) return it;
+    const [emoji, label, fn, c] = it;
+    return h('button', { type: 'button', role: 'menuitem', class: 'menu-item ' + (c || ''),
+      onclick: () => { closeMenu(); fn(); } }, h('span', { 'aria-hidden': 'true' }, emoji), h('span', null, label));
+  }));
+  document.body.append(box);
+  const r = anchor.getBoundingClientRect();
+  const w = box.offsetWidth, hgt = box.offsetHeight;
+  const left = Math.min(Math.max(8, r.right - w), window.innerWidth - w - 8);
+  const below = r.bottom + 6 + hgt < window.innerHeight;
+  box.style.left = left + 'px';
+  box.style.top = (below ? r.bottom + 6 : Math.max(8, r.top - hgt - 6)) + 'px';
+  anchor.setAttribute('aria-expanded', 'true');
+  const first = box.querySelector('button, select, a');
+  if (first) first.focus();
+  const onDoc = (e) => { if (!box.contains(e.target) && !anchor.contains(e.target)) closeMenu(); };
+  const onKey = (e) => {
+    if (e.key === 'Escape') { closeMenu(); anchor.focus(); }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      const all = [...box.querySelectorAll('.menu-item')];
+      const i = all.indexOf(document.activeElement);
+      const j = (i + (e.key === 'ArrowDown' ? 1 : -1) + all.length) % all.length;
+      if (all[j]) { e.preventDefault(); all[j].focus(); }
+    }
+  };
+  setTimeout(() => document.addEventListener('pointerdown', onDoc), 0);
+  document.addEventListener('keydown', onKey);
+  window.addEventListener('hashchange', closeMenu, { once: true });
+  openMenu = () => {
+    document.removeEventListener('pointerdown', onDoc);
+    document.removeEventListener('keydown', onKey);
+    anchor.setAttribute('aria-expanded', 'false');
+    box.remove();
+  };
+}
+
+/** A square cover image with an emoji fallback. */
+export function cover(src, size = 56, emoji = '🎵', cls = '') {
+  const box = h('span', { class: 'cover ' + cls, style: { width: size + 'px', height: size + 'px' }, 'aria-hidden': 'true' }, emoji);
+  if (src) {
+    const img = h('img', { src, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' });
+    img.addEventListener('error', () => img.remove());
+    box.append(img);
+  }
+  return box;
+}

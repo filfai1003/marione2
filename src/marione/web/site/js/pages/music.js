@@ -1,161 +1,152 @@
-// Music: what is playing, search (10 results to pick from, or a link), the queue, recent songs.
-import { fill, h, ago, debounce } from '../util.js';
+// Music, laid out like Spotify: a search bar on top; below it either the results as a track list or
+// the "now playing" hero and recently played covers; the queue in a side panel. The controls live in
+// the player bar at the bottom of every page (see playerbar.js).
+import { fill, h, ago } from '../util.js';
 import { store } from '../store.js';
-import { api, post } from '../api.js';
-import { run, handleError } from '../data.js';
-import { toast } from '../toast.js';
+import { api } from '../api.js';
+import { run } from '../data.js';
 import { t } from '../i18n.js';
-import { card, cardTitle, pageHead, notice, btn, empty, progress } from '../ui.js';
+import { notice, btn, empty, progress, cover } from '../ui.js';
+import { player, subscribePlayer, nowPlaying, queue, position, control, playTrack, thumbOf, clock, loadMusic } from '../player.js';
 
-const clock = (s) => {
-  if (s == null) return '—';
-  const v = Math.max(0, Math.round(s));
-  const hh = Math.floor(v / 3600), mm = Math.floor((v % 3600) / 60), ss = v % 60;
-  const p = (x) => String(x).padStart(2, '0');
-  return hh ? `${hh}:${p(mm)}:${p(ss)}` : `${mm}:${p(ss)}`;
-};
 const isUrl = (s) => /^https?:\/\/\S+$/i.test(s.trim());
 
-function cover(track, size = 64) {
-  const box = h('span', { class: 'cover', style: { width: size + 'px', height: size + 'px' }, 'aria-hidden': 'true' }, '🎵');
-  if (track && track.thumbnail) {
-    const img = h('img', { src: track.thumbnail, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' });
-    img.addEventListener('error', () => img.remove());
-    box.append(img);
-  }
-  return box;
-}
-
 export function mount(root) {
-  root.append(pageHead(t('music.title'), t('music.sub')));
   const off = h('div');
-  const body = h('div', { class: 'stack-lg' });
-  root.append(off, body);
-  let st = null, fetchedAt = 0, timer = null, volTouched = 0, lastError = null;
-
-  // ---------- now playing ----------
-  const now = card('now-playing');
-  const volOut = h('output', { class: 'vol-out' }, '50%');
-  const vol = h('input', { type: 'range', min: '0', max: '100', step: '1', value: '50', 'aria-label': t('music.volume') });
-  const sendVol = debounce(async () => {
-    try { await post('/api/music/volume', { percent: Number(vol.value) }); } catch (e) { handleError(e); }
-  }, 350);
-  vol.addEventListener('input', () => { volOut.textContent = vol.value + '%'; volTouched = Date.now(); sendVol(); });
-  const control = (action, b) => run(b, async () => { apply(await post('/api/music/' + action, {})); });
-  const pauseBtn = btn('⏯', 'round-btn', { 'aria-label': t('music.pause'), title: t('music.pause'), onclick: (e) => control('pause', e.currentTarget) });
-  const skipBtn = btn('⏭', 'round-btn', { 'aria-label': t('music.skip'), title: t('music.skip'), onclick: (e) => control('skip', e.currentTarget) });
-  const stopBtn = btn('⏹', 'round-btn danger', { 'aria-label': t('music.stop'), title: t('music.stop'), onclick: (e) => control('stop', e.currentTarget) });
-  const nowBody = h('div', { class: 'np-body' });
-  const posText = h('span', { class: 'np-time' });
-  const bar = h('div', { class: 'np-bar' });
-  now.append(cardTitle('🎧', t('music.nowPlaying')), nowBody, bar,
-    h('div', { class: 'np-controls' }, pauseBtn, skipBtn, stopBtn,
-      h('label', { class: 'vol' }, h('span', { class: 'field-label' }, '🔈'), vol, volOut)));
-
-  function drawNow() {
-    const np = st && st.nowPlaying;
-    pauseBtn.disabled = skipBtn.disabled = stopBtn.disabled = !np;
-    if (!np) {
-      fill(nowBody, empty('🎶', t('music.silence')));
-      fill(bar);
-      return;
-    }
-    pauseBtn.textContent = np.paused ? '▶' : '⏸';
-    pauseBtn.setAttribute('aria-label', np.paused ? t('music.resume') : t('music.pause'));
-    fill(nowBody, cover(np, 96),
-      h('div', { class: 'np-info' },
-        h('a', { class: 'np-title', href: np.url, target: '_blank', rel: 'noopener noreferrer' }, np.title),
-        h('small', null, [np.channel, t('music.by', { name: np.requestedBy })].filter(Boolean).join(' · ')),
-        np.paused ? h('span', { class: 'tag' }, t('music.paused')) : null));
-    tickBar();
-  }
-  function tickBar() {
-    const np = st && st.nowPlaying;
-    if (!np) return;
-    const pos = np.paused ? np.position : np.position + (Date.now() - fetchedAt) / 1000;
-    const pct = np.duration ? (pos / np.duration) * 100 : 0;
-    posText.textContent = clock(Math.min(pos, np.duration || pos)) + ' / ' + clock(np.duration);
-    fill(bar, progress(pct, t('music.progress')), posText);
-  }
+  const body = h('div', { class: 'music' });
+  root.append(h('h1', { class: 'sr-only' }, t('music.title')), off, body);
+  let results = null, single = false, lastQuery = '';
 
   // ---------- search ----------
   const q = h('input', { type: 'search', placeholder: t('music.searchPh'), 'aria-label': t('music.searchPh'), enterkeyhint: 'search', autocomplete: 'off' });
-  const go = btn('🔎 ' + t('music.search'), 'primary', { type: 'submit' });
-  const results = h('div', { class: 'stack' });
-  const searchForm = h('form', { class: 'search-row', onsubmit: (e) => {
+  const go = btn(t('music.search'), 'primary', { type: 'submit' });
+  const clear = h('button', { type: 'button', class: 'icon-btn ms-clear', 'aria-label': t('music.clear'), title: t('music.clear'), hidden: true,
+    onclick: () => { q.value = ''; clear.hidden = true; results = null; draw(); q.focus(); } }, '✕');
+  q.addEventListener('input', () => { clear.hidden = !q.value; });
+  const form = h('form', { class: 'ms-search', role: 'search', onsubmit: (e) => {
     e.preventDefault();
     const text = q.value.trim();
     if (!text) { q.focus(); return; }
     run(go, async () => {
-      fill(results, h('p', { class: 'muted center' }, t('music.searching')));
+      lastQuery = text;
+      results = 'loading';
+      draw();
       try {
         const r = await api('/api/music/search?q=' + encodeURIComponent(text));
-        drawResults(r.results, isUrl(text));
-      } catch (err) { fill(results); throw err; }
+        results = r.results; single = isUrl(text);
+      } catch (err) { results = null; throw err; } finally { draw(); }
     });
-  } }, h('div', { class: 'search' }, h('span', { class: 'search-ico', 'aria-hidden': 'true' }, '🎵'), q), go);
-
-  const play = async (track, now, b) => run(b, async () => {
-    const r = await post('/api/music/play', { ...track, now });
-    toast(r.message);
-    await load();
-  });
-  function trackRow(track, actions) {
-    return h('li', { class: 'track' }, cover(track, 56),
-      h('span', { class: 'track-main' }, h('strong', null, track.title),
-        h('small', null, [track.channel, clock(track.duration), track.source && track.source !== 'youtube' ? track.source : null].filter(Boolean).join(' · '))),
-      h('span', { class: 'track-actions' }, actions));
-  }
-  function drawResults(list, single) {
-    if (!list.length) { fill(results, empty('🔎', t('music.noResults'))); return; }
-    fill(results, h('p', { class: 'muted small' }, single ? t('music.fromLink') : t('music.pick')),
-      h('ul', { class: 'tracks' }, list.map((tr) => trackRow(tr, [
-        btn('▶ ' + t('music.playNow'), 'primary sm', { onclick: (e) => play(tr, true, e.currentTarget) }),
-        btn('＋ ' + t('music.addQueue'), 'ghost sm', { onclick: (e) => play(tr, false, e.currentTarget) }),
-      ]))));
-    // On a phone the results start below the fold: bring them into view.
-    if (window.innerWidth < 800) results.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
-  const searchCard = card('', cardTitle('🔎', t('music.find')), h('p', { class: 'hint' }, t('music.findHint')), searchForm, results);
-
-  // ---------- queue + recent ----------
-  const queueBody = h('div');
-  const recentBody = h('div');
-  const queueCard = card('', cardTitle('📜', t('music.queue')), queueBody);
-  const recentCard = h('details', { class: 'card fold' },
-    h('summary', null, h('span', { class: 'ct-emoji', 'aria-hidden': 'true' }, '🕘'),
-      h('span', { class: 'fold-title' }, h('h2', null, t('music.recent')), h('small', null, t('music.recentSub'))),
-      h('span', { class: 'fold-chev', 'aria-hidden': 'true' }, '▾')),
-    h('div', { class: 'fold-body' }, recentBody));
-  function drawQueue() {
-    const list = (st && st.queue) || [];
-    fill(queueBody, list.length ? h('ol', { class: 'tracks numbered' }, list.map((tr, i) => trackRow(tr, [
-      h('small', { class: 'muted' }, t('music.by', { name: tr.requestedBy })),
-      h('button', { type: 'button', class: 'icon-btn del', 'aria-label': t('common.delete') + ' ' + tr.title, title: t('common.delete'),
-        onclick: (e) => run(e.currentTarget, async () => { apply(await post('/api/music/remove', { index: i })); }) }, '🗑'),
-    ]))) : empty('📭', t('music.queueEmpty')));
-    const recent = (st && st.recent) || [];
-    fill(recentBody, recent.length ? h('ul', { class: 'tracks' }, recent.map((tr) => trackRow(tr, [
-      h('small', { class: 'muted' }, [tr.by, ago(tr.at)].filter(Boolean).join(' · ')),
-      btn('＋', 'ghost sm', { 'aria-label': t('music.addQueue') + ': ' + tr.title, title: t('music.addQueue'), onclick: (e) => play({ title: tr.title, url: tr.url, duration: tr.duration }, false, e.currentTarget) }),
-    ]))) : empty('🕘', t('music.noRecent')));
-  }
+  } }, h('div', { class: 'ms-box' }, h('span', { class: 'ms-ico', 'aria-hidden': 'true' }, '🔎'), q, clear), go);
 
   const voiceHint = h('p', { class: 'warn-box', hidden: true }, '🎧 ' + t('music.joinVoice'));
-  body.append(voiceHint, h('div', { class: 'grid g-music' }, now, searchCard), queueCard, recentCard);
+  const main = h('div', { class: 'ms-main' });
+  const side = h('aside', { class: 'card ms-queue', 'aria-label': t('music.queue') });
+  body.append(form, voiceHint, h('div', { class: 'ms-layout' }, main, side));
 
-  function apply(r) {
-    st = { ...(st || {}), ...r };
-    fetchedAt = Date.now();
-    if (Date.now() - volTouched > 3000 && document.activeElement !== vol && r.volume != null) { vol.value = r.volume; volOut.textContent = r.volume + '%'; }
-    drawNow(); drawQueue();
-    if (r.lastError && r.lastError !== lastError) toast(t('music.failed', { what: r.lastError.split(':')[0] }), 'err');
-    lastError = r.lastError || null;
-  }
-  async function load() {
-    try { apply(await api('/api/music/state')); } catch (e) { if (e.code !== 'feature_off') handleError(e); }
+  const play = (track, now, b) => run(b, () => playTrack(track, now));
+
+  // ---------- track list (search results) ----------
+  function trackList(list) {
+    return h('ol', { class: 'tl' }, list.map((tr, i) => h('li', { class: 'tl-row' },
+      h('span', { class: 'tl-num' }, h('span', { class: 'tl-i' }, String(i + 1)),
+        h('button', { type: 'button', class: 'tl-play', 'aria-label': t('music.playNow') + ': ' + tr.title, title: t('music.playNow'),
+          onclick: (e) => play(tr, true, e.currentTarget) }, '▶')),
+      cover(thumbOf(tr), 44),
+      h('span', { class: 'tl-main' }, h('strong', { title: tr.title }, tr.title),
+        h('small', null, [tr.channel, tr.source && tr.source !== 'youtube' ? tr.source : null].filter(Boolean).join(' · '))),
+      h('span', { class: 'tl-dur' }, clock(tr.duration)),
+      h('span', { class: 'tl-actions' },
+        btn('▶', 'primary sm tl-now', { 'aria-label': t('music.playNow') + ': ' + tr.title, title: t('music.playNow'), onclick: (e) => play(tr, true, e.currentTarget) }),
+        btn('＋', 'ghost sm', { 'aria-label': t('music.addQueue') + ': ' + tr.title, title: t('music.addQueue'), onclick: (e) => play(tr, false, e.currentTarget) })))));
   }
 
+  // ---------- now playing hero ----------
+  const hero = h('section', { class: 'ms-hero' });
+  const heroBar = h('div', { class: 'ms-hero-bar' });
+  function drawHero() {
+    const np = nowPlaying();
+    if (!np) {
+      fill(hero, h('div', { class: 'ms-hero-art' }, cover(null, 168, '🎶')),
+        h('div', { class: 'ms-hero-info' },
+          h('span', { class: 'eyebrow' }, t('music.nowPlaying')),
+          h('h2', null, t('music.silenceTitle')),
+          h('p', { class: 'muted' }, t('music.silence')),
+          btn('🔎 ' + t('music.find'), 'primary', { onclick: () => q.focus() })));
+      hero.classList.add('idle');
+      return;
+    }
+    hero.classList.remove('idle');
+    fill(hero, h('div', { class: 'ms-hero-art' }, cover(thumbOf(np), 168)),
+      h('div', { class: 'ms-hero-info' },
+        h('span', { class: 'eyebrow' }, np.paused ? t('music.paused') : t('music.nowPlaying')),
+        h('h2', null, h('a', { href: np.url, target: '_blank', rel: 'noopener noreferrer' }, np.title)),
+        h('p', { class: 'muted' }, [np.channel, t('music.by', { name: np.requestedBy })].filter(Boolean).join(' · ')),
+        heroBar,
+        h('div', { class: 'ms-hero-ctl' },
+          h('button', { type: 'button', class: 'big-play', 'aria-label': np.paused ? t('music.resume') : t('music.pause'),
+            onclick: () => control('pause') }, np.paused ? '▶' : '⏸'),
+          h('button', { type: 'button', class: 'pb-btn', 'aria-label': t('music.skip'), title: t('music.skip'), onclick: () => control('skip') }, '⏭'),
+          h('button', { type: 'button', class: 'pb-btn', 'aria-label': t('music.stop'), title: t('music.stop'), onclick: () => control('stop') }, '⏹'))));
+    tick();
+  }
+  function tick() {
+    const np = nowPlaying();
+    if (!np) return;
+    const pos = position();
+    fill(heroBar, h('span', { class: 'pb-time' }, clock(pos)), progress(np.duration ? (pos / np.duration) * 100 : 0, t('music.progress'), 'thin'),
+      h('span', { class: 'pb-time' }, clock(np.duration)));
+  }
+
+  // ---------- recently played: cover cards with a play button on hover ----------
+  function recentGrid() {
+    const recent = ((player.st && player.st.recent) || []).slice(0, 12);
+    if (!recent.length) return null;
+    return h('section', { class: 'stack' }, h('h2', { class: 'ms-h' }, t('music.recent')),
+      h('div', { class: 'cards' }, recent.map((tr) => h('div', { class: 'mcard' },
+        h('div', { class: 'mcard-art' }, cover(thumbOf(tr), 160, '🎵', 'wide'),
+          h('button', { type: 'button', class: 'mcard-play', 'aria-label': t('music.addQueue') + ': ' + tr.title, title: t('music.addQueue'),
+            onclick: (e) => play({ title: tr.title, url: tr.url, duration: tr.duration }, false, e.currentTarget) }, '＋')),
+        h('strong', { title: tr.title }, tr.title),
+        h('small', null, [tr.by, ago(tr.at)].filter(Boolean).join(' · '))))));
+  }
+
+  // ---------- queue panel ----------
+  function drawQueue() {
+    const np = nowPlaying(), list = queue();
+    fill(side,
+      h('h2', { class: 'ms-h' }, t('music.queue')),
+      np ? [h('p', { class: 'q-label' }, t('music.nowPlaying')),
+        h('div', { class: 'q-row now' }, cover(thumbOf(np), 44), h('span', { class: 'q-main' }, h('strong', null, np.title), h('small', null, np.channel || '')))] : null,
+      h('p', { class: 'q-label' }, t('music.next')),
+      list.length ? h('ol', { class: 'q-list' }, list.map((tr, i) => h('li', { class: 'q-row' },
+        h('span', { class: 'q-n' }, String(i + 1)), cover(thumbOf(tr), 40),
+        h('span', { class: 'q-main' }, h('strong', { title: tr.title }, tr.title), h('small', null, t('music.by', { name: tr.requestedBy }))),
+        h('button', { type: 'button', class: 'icon-btn del', 'aria-label': t('common.delete') + ': ' + tr.title, title: t('music.removeQueue'),
+          onclick: () => control('remove', { index: i }) }, '✕'))))
+        : empty('📭', t('music.queueEmpty')));
+  }
+
+  let shownKey = '';
+  function draw() {
+    const st = player.st || {};
+    const key = JSON.stringify([results === 'loading' ? 'l' : results, single, st.nowPlaying && [st.nowPlaying.url, st.nowPlaying.paused], st.recent, lastQuery]);
+    if (key !== shownKey) {
+      shownKey = key;
+      if (results === 'loading') fill(main, h('p', { class: 'muted center ms-wait' }, t('music.searching')));
+      else if (results) {
+        fill(main, h('div', { class: 'ms-res-head' },
+          h('h2', { class: 'ms-h' }, single ? t('music.fromLink') : t('music.resultsFor', { q: lastQuery })),
+          btn('✕ ' + t('music.clear'), 'ghost sm', { onclick: () => { results = null; q.value = ''; clear.hidden = true; draw(); } })),
+        results.length ? h('div', { class: 'card tl-card' }, trackList(results)) : empty('🔎', t('music.noResults')));
+      } else {
+        drawHero();
+        fill(main, hero, recentGrid());
+      }
+    }
+    drawQueue();
+  }
+
+  const unsub = subscribePlayer(draw);
   function update() {
     const s = store.state;
     if (!s) return;
@@ -163,8 +154,8 @@ export function mount(root) {
     fill(off, on ? null : notice('🔇', t('music.offTitle'), t('music.offText')));
     body.hidden = !on;
     voiceHint.hidden = store.inVoice;
-    if (on && !timer) { load(); timer = setInterval(() => { if (!document.hidden) load(); }, 5000); }
+    if (on && !player.st) loadMusic();
+    draw();
   }
-  return { update, tick: tickBar, destroy() { clearInterval(timer); sendVol.cancel(); } };
+  return { update, tick, destroy() { unsub(); } };
 }
-

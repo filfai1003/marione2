@@ -5,7 +5,7 @@ import { api, post } from '../api.js';
 import { run, refreshState, handleError } from '../data.js';
 import { toast } from '../toast.js';
 import { t, locale } from '../i18n.js';
-import { pageHead, notice, btn, nameModal, confirmDialog, pickFile, searchBox, chipGroup, empty, preview } from '../ui.js';
+import { pageHead, notice, btn, nameModal, confirmDialog, pickFile, searchBox, chipGroup, empty, preview, popover } from '../ui.js';
 
 /** Upload modal for a file (also used by the global drag & drop). */
 export function openAdd(file) {
@@ -29,7 +29,8 @@ export function openAdd(file) {
 }
 
 export function mount(root) {
-  root.append(pageHead(t('board.title'), t('board.sub')));
+  const addBtn = btn('＋ ' + t('board.addSound'), 'primary', { onclick: () => pickFile(openAdd) });
+  root.append(pageHead(t('board.title'), t('board.sub'), addBtn));
   const off = h('div'), body = h('div', { class: 'stack' });
   root.append(off, body);
   let filter = 'all', query = '';
@@ -45,7 +46,6 @@ export function mount(root) {
   }, 350);
   vol.addEventListener('input', () => { volOut.textContent = vol.value + '%'; volTouched = Date.now(); sendVol(); });
   const stopBtn = btn('⏹ ' + t('board.stop'), 'danger sm', { onclick: () => run(stopBtn, () => post('/api/soundboard/stop')) });
-  const addBtn = btn('＋ ' + t('board.add'), 'primary sm', { onclick: () => pickFile(openAdd) });
   const search = searchBox(t('board.search'), (q) => { query = q.toLowerCase(); draw(); }, 120);
   const chips = chipGroup([['all', t('board.fAll')], ['fav', '★ ' + t('board.fFav')], ['mine', t('board.fMine')]], filter,
     (k) => { filter = k; draw(); }, t('board.filter'));
@@ -57,10 +57,11 @@ export function mount(root) {
     try { localStorage.setItem('marione-board-sort', sort); } catch { /* storage blocked */ }
     draw();
   });
-  const bar = h('div', { class: 'card controls sticky' },
-    h('div', { class: 'controls-row' },
-      h('label', { class: 'vol' }, h('span', { class: 'field-label' }, '🔈 ' + t('board.volume')), vol, volOut), stopBtn),
-    h('div', { class: 'controls-row' }, search.el, chips, h('label', { class: 'sort' }, h('span', { class: 'field-label' }, '↕ ' + t('board.sort')), sortSel), addBtn));
+  const bar = h('div', { class: 'board-bar' },
+    h('div', { class: 'bb-find' }, search.el, chips,
+      h('label', { class: 'sort' }, h('span', { class: 'sr-only' }, t('board.sort')), sortSel)),
+    h('div', { class: 'bb-out' },
+      h('label', { class: 'vol' }, h('span', { 'aria-hidden': 'true', title: t('board.volume') }, '🔈'), h('span', { class: 'sr-only' }, t('board.volume')), vol, volOut), stopBtn));
   const count = h('p', { class: 'muted small', 'aria-live': 'polite' });
   const grid = h('div');
   body.append(bar, count, grid);
@@ -82,19 +83,28 @@ export function mount(root) {
     await run(b, async () => { await post('/api/soundboard/remove', { id: s.id }); toast(t('board.deleted')); await refreshState(); });
   });
 
+  const more = (s, canEdit, canDelete, anchor) => popover(anchor, [
+    [preview.key() === 'b' + s.id ? '⏸' : '🎧', preview.key() === 'b' + s.id ? t('board.stopPreview') : t('board.listenHere'),
+      () => preview.toggle('b' + s.id, '/api/soundboard/audio?id=' + encodeURIComponent(s.id), () => toast(t('board.noPreview'), 'err'))],
+    [s.fav ? '★' : '☆', s.fav ? t('board.unfav') : t('board.fav'), () => toggleFav(s, anchor)],
+    canEdit ? ['✏️', t('board.edit'), () => rename(s)] : null,
+    canDelete ? ['🗑', t('common.delete'), () => remove(s), 'danger'] : null,
+  ]);
+
   const tile = (s, canEdit, canDelete) => {
-    const main = h('button', { type: 'button', class: 'tile-main', title: t('board.playIn'), onclick: (e) => play(s, e.currentTarget.closest('.tile')) },
-      h('span', { class: 'tile-emoji', 'aria-hidden': 'true' }, s.emoji || '🔊'),
-      h('span', { class: 'tile-name' }, s.name), h('small', null, fmtDur(s.durationMs)));
-    const ib = (txt, label, fn, cls = '', extra) => h('button', { type: 'button', class: 'tile-ib ' + cls, 'aria-label': label, title: label, onclick: (e) => fn(e.currentTarget), ...extra }, txt);
     const on = preview.key() === 'b' + s.id;
-    return h('div', { class: 'tile' + (s.fav ? ' fav' : '') },
+    const main = h('button', { type: 'button', class: 'tile-main', title: t('board.playIn'), 'aria-label': t('board.playName', { name: s.name }),
+      onclick: (e) => play(s, e.currentTarget.closest('.tile')) },
+      h('span', { class: 'tile-emoji', 'aria-hidden': 'true' }, s.emoji || '🔊'),
+      h('span', { class: 'tile-name' }, s.name), h('small', null, (on ? '🎧 ' : '') + fmtDur(s.durationMs)));
+    return h('div', { class: 'tile' + (s.fav ? ' fav' : '') + (on ? ' previewing' : '') },
       main,
-      h('div', { class: 'tile-tools' },
-        ib(on ? '⏸' : '🎧', t('board.preview', { name: s.name }), () => preview.toggle('b' + s.id, '/api/soundboard/audio?id=' + encodeURIComponent(s.id), () => toast(t('board.noPreview'), 'err')), 'prev'),
-        ib(s.fav ? '★' : '☆', s.fav ? t('board.unfav') : t('board.fav'), (b) => toggleFav(s, b), s.fav ? 'on' : ''),
-        canEdit ? ib('✏️', t('board.rename', { name: s.name }), () => rename(s)) : null,
-        canDelete ? ib('🗑', t('board.delete', { name: s.name }), () => remove(s), 'del') : null));
+      h('button', { type: 'button', class: 'tile-star' + (s.fav ? ' on' : ''), 'aria-pressed': String(!!s.fav),
+        'aria-label': s.fav ? t('board.unfav') : t('board.fav'), title: s.fav ? t('board.unfav') : t('board.fav'),
+        onclick: (e) => toggleFav(s, e.currentTarget) }, s.fav ? '★' : '☆'),
+      h('button', { type: 'button', class: 'tile-more', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
+        'aria-label': t('board.actions', { name: s.name }), title: t('board.actions', { name: s.name }),
+        onclick: (e) => more(s, canEdit, canDelete, e.currentTarget) }, '⋯'));
   };
 
   function draw() {
@@ -132,6 +142,7 @@ export function mount(root) {
     const on = s.modules.soundboard;
     region(off, on ? 'on' : 'off', () => on ? null : notice('🔇', t('board.offTitle'), t('board.offText')));
     body.hidden = !on;
+    addBtn.hidden = !on;
     if (!on) return;
     if (Date.now() - volTouched > 3000 && document.activeElement !== vol) { vol.value = s.soundboardVolume; volOut.textContent = s.soundboardVolume + '%'; }
     draw();
