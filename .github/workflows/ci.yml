@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          # discord.py voice needs the stdlib audioop, removed in 3.13.
+          python-version: "3.12"
+          cache: pip
+      - name: Install system packages
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg libopus0
+      - name: Install
+        run: pip install -e ".[dev]"
+      # The tests start their own throw-away Postgres from the runner's PostgreSQL binaries
+      # (tests/conftest.py), so no service container is needed.
+      - name: Check (ruff, mypy, pytest)
+        run: bash scripts/check.sh
+        env:
+          PYTHON: python
