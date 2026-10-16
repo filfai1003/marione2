@@ -8,6 +8,7 @@ _PLAIN = {
     "afk_drain": "Letto AFK",
     "admin_adjust": "Intervento di un admin",
     "reversal": "Operazione annullata",
+    "legacy_import": "Saldo dal vecchio Marione",
 }
 _WITH = {
     "transfer_out": "Mandati a {who}",

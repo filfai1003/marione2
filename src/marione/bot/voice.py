@@ -5,12 +5,13 @@ import ctypes.util
 import io
 import logging
 import shutil
-import time
 from collections.abc import Callable
 from enum import Enum
 from typing import Any, cast
 
 import discord
+
+from marione.domain.presence import choose_channel
 
 logger = logging.getLogger("marione.voice")
 
@@ -57,21 +58,43 @@ class PlayStatus(Enum):
 
 
 class VoicePlayer:
-    """The bot's single voice connection: it follows the member, plays one sound at a time and
-    leaves when nobody is left or after a quiet minute."""
+    """The bot's single voice connection. It joins as soon as somebody enters a voice channel and
+    stays until it is left alone (see `domain.presence`); sounds play one at a time."""
 
-    def __init__(
-        self,
-        guild_getter: Callable[[], discord.Guild | None],
-        *,
-        idle_seconds: float = 60,
-        mono: Callable[[], float] = time.monotonic,
-    ) -> None:
+    def __init__(self, guild_getter: Callable[[], discord.Guild | None]) -> None:
         self._guild = guild_getter
-        self._idle_seconds = idle_seconds
-        self._mono = mono
         self._lock = asyncio.Lock()
-        self._last_activity = mono()
+
+    @staticmethod
+    def _humans(channel: Any) -> int:
+        return sum(1 for m in getattr(channel, "members", []) if not m.bot)
+
+    async def settle(self, joined: discord.abc.Snowflake | None = None) -> None:
+        """Move to where the people are, or leave if nobody is left."""
+        guild = self._guild()
+        if guild is None:
+            return
+        async with self._lock:
+            client = cast(discord.VoiceClient | None, guild.voice_client)
+            channels = {
+                c.id: self._humans(c) for c in (*guild.voice_channels, *guild.stage_channels)
+            }
+            current = client.channel.id if client is not None else None
+            target = choose_channel(current, channels, joined.id if joined else None)
+            try:
+                if target is None:
+                    if client is not None:
+                        await client.disconnect(force=False)
+                    return
+                channel = guild.get_channel(target)
+                if not isinstance(channel, discord.VoiceChannel | discord.StageChannel):
+                    return
+                if client is None:
+                    await channel.connect()
+                elif target != current:
+                    await client.move_to(channel)
+            except (discord.ClientException, discord.HTTPException, TimeoutError) as exc:
+                logger.warning("could not join the voice channel: %s", exc)
 
     async def play(
         self,
@@ -80,7 +103,10 @@ class VoicePlayer:
         *,
         volume: float = 1.0,
         interrupt: bool = False,
+        move: bool = True,
     ) -> PlayStatus:
+        """Play in `channel`. `move=False` only plays if the bot is already there (an entrance
+        never drags the bot away from people); `interrupt` cuts off what is playing."""
         guild = channel.guild
         async with self._lock:
             try:
@@ -90,6 +116,8 @@ class VoicePlayer:
                     client = await channel.connect()
                 else:
                     client = cast(discord.VoiceClient, existing)
+                if client.channel != channel and not move:
+                    return PlayStatus.BUSY
                 if client.is_playing():
                     if not interrupt:
                         return PlayStatus.BUSY
@@ -97,7 +125,6 @@ class VoicePlayer:
                 if client.channel != channel:
                     await client.move_to(channel)
                 client.play(audio_source(data, volume))
-                self._last_activity = self._mono()
             except (discord.ClientException, discord.HTTPException, TimeoutError) as exc:
                 logger.warning("could not play a sound: %s", exc)
                 return PlayStatus.ERROR
@@ -110,24 +137,3 @@ class VoicePlayer:
             return False
         client.stop()  # type: ignore[attr-defined]
         return True
-
-    async def leave_if_empty(self, channel: discord.abc.Connectable) -> None:
-        guild = self._guild()
-        client = guild.voice_client if guild else None
-        if client is None or client.channel != channel:
-            return
-        members = getattr(client.channel, "members", [])
-        if all(m.bot for m in members):
-            await client.disconnect(force=False)
-
-    async def reap_idle(self) -> None:
-        """Leave the channel when nothing has played for a while."""
-        guild = self._guild()
-        client = guild.voice_client if guild else None
-        if client is None:
-            return
-        playing = client.is_playing()  # type: ignore[attr-defined]
-        if playing:
-            self._last_activity = self._mono()
-        elif self._mono() - self._last_activity >= self._idle_seconds:
-            await client.disconnect(force=False)

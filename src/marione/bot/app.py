@@ -17,6 +17,7 @@ EXTENSIONS = (
     "marione.bot.cogs.roles",
     "marione.bot.cogs.agent",
     "marione.bot.cogs.commands",
+    "marione.bot.cogs.legacy",
 )
 
 

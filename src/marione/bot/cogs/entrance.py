@@ -1,4 +1,5 @@
-"""Entrance sounds: when a member joins a voice channel, the bot follows and plays their audio."""
+"""Voice presence and entrance sounds: the bot joins as soon as somebody enters a voice channel,
+stays until it is alone, and plays the member's entrance sound when they arrive."""
 
 import logging
 import time
@@ -32,11 +33,12 @@ class EntranceCog(commands.Cog):
     ) -> None:
         if member.guild.id != self.bot.guild_id or member.bot:
             return
-        # Someone left a channel the bot is in: leave if only bots remain.
-        if before.channel is not None and before.channel != after.channel:
-            await self.bot.voice.leave_if_empty(before.channel)
-        joined = after.channel is not None and after.channel != before.channel
-        if not joined or after.channel is None:
+        moved = before.channel != after.channel
+        if not moved:
+            return  # a mute or a deafen, not a change of channel
+        # Follow the people: join whoever just came in, leave when nobody is left.
+        await self.bot.voice.settle(joined=after.channel)
+        if after.channel is None:
             return
         svc = self.bot.services
         if not await svc.settings.is_enabled("sound"):
@@ -47,12 +49,15 @@ class EntranceCog(commands.Cog):
         if sound is None:
             return
         volume = await svc.settings.soundboard_volume() / 100
-        # An entrance never cuts off a sound that is already playing.
-        await self.bot.voice.play(after.channel, sound.data, volume=volume, interrupt=False)
+        # An entrance never cuts off a sound and never pulls the bot away from other people.
+        await self.bot.voice.play(
+            after.channel, sound.data, volume=volume, interrupt=False, move=False
+        )
 
-    @tasks.loop(seconds=30)
+    @tasks.loop(seconds=60)
     async def reaper(self) -> None:
-        await self.bot.voice.reap_idle()
+        """A safety net for missed events (and the start): be where the people are."""
+        await self.bot.voice.settle()
 
     @reaper.before_loop
     async def _wait(self) -> None:

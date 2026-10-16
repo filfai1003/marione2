@@ -49,3 +49,15 @@ class SettingsRepo:
             json.dumps(percent),
         )
         return percent
+
+    async def get_value(self, key: str) -> object:
+        raw = await self._pool.fetchval("select value from marione.settings where key = $1", key)
+        return None if raw is None else json.loads(raw)
+
+    async def set_value(self, key: str, value: object) -> None:
+        await self._pool.execute(
+            "insert into marione.settings (key, value) values ($1, $2::jsonb)"
+            " on conflict (key) do update set value = excluded.value, updated_at = now()",
+            key,
+            json.dumps(value),
+        )

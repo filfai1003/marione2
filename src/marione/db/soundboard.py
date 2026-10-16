@@ -40,6 +40,8 @@ class SoundboardRepo:
         content_type: str,
         data: bytes,
         duration_ms: int,
+        *,
+        max_duration_ms: int = MAX_DURATION_MS,
     ) -> int:
         name = name.strip()
         emoji = emoji.strip() or "🔊"
@@ -51,8 +53,8 @@ class SoundboardRepo:
             raise SoundError("Only mp3, wav or ogg files are accepted.")
         if not 0 < len(data) <= MAX_BYTES:
             raise SoundError("The file must be between 1 byte and 8 MB.")
-        if not 0 < duration_ms <= MAX_DURATION_MS:
-            raise SoundError("A sound can last at most 30 seconds.")
+        if not 0 < duration_ms <= max_duration_ms:
+            raise SoundError(f"A sound can last at most {max_duration_ms // 1000} seconds.")
         if (
             await self._pool.fetchval("select count(*) from marione.soundboard_sounds")
             >= MAX_SOUNDS
@@ -168,3 +170,14 @@ class SoundboardRepo:
             BoardSound(r["id"], r["name"], r["emoji"], r["creator_id"], r["duration_ms"])
             for r in rows
         ]
+
+    async def add_favorite(self, user_id: int, sound_id: int) -> None:
+        await self._pool.execute(
+            "insert into marione.members (user_id) values ($1) on conflict do nothing", user_id
+        )
+        await self._pool.execute(
+            "insert into marione.soundboard_favorites (user_id, sound_id) values ($1, $2)"
+            " on conflict do nothing",
+            user_id,
+            sound_id,
+        )

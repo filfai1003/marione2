@@ -331,6 +331,21 @@ class CommandsCog(commands.Cog):
             ephemeral=True,
         )
 
+    @admin.command(
+        name="importa-vecchio",
+        description="Importa saldi, soundboard e suoni d'entrata dal vecchio Marione",
+    )
+    async def admin_legacy(self, interaction: discord.Interaction) -> None:
+        cog = self.bot.get_cog("LegacyCog")
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        report = await cog.run() if cog is not None else None  # type: ignore[attr-defined]
+        if report is None:
+            await interaction.followup.send("Non trovo il canale #marione-data.", ephemeral=True)
+            return
+        lines = [f"📦 Importati: {report.summary()}."]
+        lines += [f"• {s}" for s in report.skipped[:10]]
+        await interaction.followup.send("\n".join(lines)[:1900], ephemeral=True)
+
     @admin.command(name="stato", description="Funzioni attive, costi dell'IA, controllo dei saldi")
     async def admin_status(self, interaction: discord.Interaction) -> None:
         from datetime import UTC, datetime, timedelta

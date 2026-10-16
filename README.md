@@ -11,13 +11,14 @@ OpenRouter. Tutti i dati vivono nel suo database: niente è salvato nei messaggi
 | Ruoli ricchezza | 12 ruoli (da *Morto di fame* a *Divinità Spaghettara*) assegnati in base al saldo. Creati e gestiti solo da Marione. **Spenti di default**: li accende un admin. |
 | Furto | `/marione deruba`: probabilità e multa calcolate in modo che tentare sia sempre in perdita; se ti beccano paghi la multa alla vittima. Un tentativo l'ora, il tempo è nel database. |
 | Soundboard | Libreria di suoni condivisa: si aggiungono dal sito o con `/marione soundboard-aggiungi`, si suonano nella tua vocale. |
+| Presenza in vocale | Marione entra appena qualcuno entra in vocale e resta finché non rimane solo. |
 | Suoni d'entrata | Quando entri in vocale suona uno dei tuoi audio a caso. |
 | Chat con l'AI | Risponde se chiamato o quando ha qualcosa da dire (OpenRouter). Vede cosa stai citando, chi è in vocale, il tuo ruolo e i movimenti recenti; ricorda i membri in modo strutturato; la conversazione sopravvive ai riavvii. Può regalare o multare monete con tetti rigidi. |
 | Sito web | Login con Discord: saldo, classifica, pagamenti, furto, soundboard, suoni d'entrata, impostazioni admin e costi dell'AI. |
 
 Comandi: `/marione` (saldo, paga, deruba, classifica, storico, soundboard, soundboard-aggiungi,
 soundboard-rimuovi, suono-aggiungi/lista/rimuovi, dimentica) e `/marione-admin` (regala, multa,
-imposta, annulla, funzione, stato).
+imposta, annulla, funzione, stato, importa-vecchio).
 
 ## Sviluppo
 
