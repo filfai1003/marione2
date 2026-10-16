@@ -74,11 +74,15 @@ class InsightRepo:
                 (select count(*) from marione.episodes e where m.user_id = any(e.participants))
                   as episodes,
                 (select count(*) from marione.channel_log c where c.author_id = m.user_id)
-                  as messages
+                  as messages,
+                (select count(*) from marione.presence_spans p where p.user_id = m.user_id)
+                  + (select count(*) from marione.voice_spans v where v.user_id = m.user_id)
+                  + (select count(*) from marione.activity_spans a where a.user_id = m.user_id)
+                  as observed
               from marione.members m
             )
             select *, count(*) over () as total from counts
-            where facts + episodes + messages > 0
+            where facts + episodes + messages + observed > 0
               and ($1 = '' or display_name ilike '%' || $1 || '%')
             order by facts + episodes + messages desc, lower(display_name)
             offset $2 limit $3

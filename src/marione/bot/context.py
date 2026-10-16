@@ -5,10 +5,12 @@ from zoneinfo import ZoneInfo
 
 from marione.config import Settings
 from marione.db.chatlog import ChatLog
+from marione.db.habits import HabitsRepo
 from marione.db.heists import HeistRepo
 from marione.db.insight import InsightRepo
 from marione.db.ledger import Ledger
 from marione.db.memory import MemoryRepo
+from marione.db.music import MusicRepo
 from marione.db.pool import Pool
 from marione.db.roles import RolesRepo
 from marione.db.settings import SettingsRepo
@@ -18,6 +20,7 @@ from marione.db.usage import UsageRepo
 from marione.domain.rules import AgentRules, EconomyRules
 from marione.llm.budget import BudgetedLLM
 from marione.llm.openrouter import OpenRouterClient
+from marione.media.ytdl import Ytdl
 from marione.services.economy import EconomyService
 from marione.services.sounds import SoundService
 
@@ -33,6 +36,9 @@ class Services:
     roles: RolesRepo
     chatlog: ChatLog
     insight: InsightRepo
+    music: MusicRepo
+    habits: HabitsRepo
+    ytdl: Ytdl
     memory: MemoryRepo
     usage: UsageRepo
     economy: EconomyService
@@ -71,6 +77,9 @@ def build_services(config: Settings, pool: Pool) -> Services:
         roles=RolesRepo(pool),
         chatlog=ChatLog(pool),
         insight=InsightRepo(pool),
+        music=MusicRepo(pool),
+        habits=HabitsRepo(pool),
+        ytdl=Ytdl(config.ytdlp_cookies, config.ytdlp_proxy),
         memory=MemoryRepo(pool),
         usage=usage,
         economy=EconomyService(ledger, rules, HeistRepo(pool)),

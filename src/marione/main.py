@@ -11,7 +11,8 @@ import discord
 from marione.bot.app import MarioneBot
 from marione.bot.context import Services, build_services
 from marione.bot.guildview import DiscordGuildView
-from marione.bot.voice import VoicePlayer
+from marione.bot.music import MusicPlayer
+from marione.bot.voice import VoicePlayer, music_source
 from marione.config import load_settings
 from marione.db.pool import Pool, create_pool, migrate
 from marione.web import app as web_app
@@ -53,9 +54,13 @@ async def run_bot(services: Services) -> int:
         return current.get_guild(services.config.guild_id) if current else None
 
     voice = VoicePlayer(guild)
+    music = MusicPlayer(
+        voice, services.ytdl, services.music, services.settings, source_factory=music_source
+    )
     deps = WebDeps(
         services,
         DiscordGuildView(guild, voice, services.config.announce_channel_id),
+        music=music,
     )
     runner = await web_app.start(
         web_app.create_app(
@@ -65,13 +70,24 @@ async def run_bot(services: Services) -> int:
         ),
         services.config.port,
     )
+    presences = True
     try:
         while True:
-            current = MarioneBot(services, voice)
+            current = MarioneBot(services, voice, music, presences=presences)
             try:
                 async with current:
                     await current.start(services.config.discord_token)
                 return 0
+            except discord.PrivilegedIntentsRequired as exc:
+                if not presences:
+                    logger.error("The bot stopped: %r", exc)
+                    logger.error("Enable Server Members and Message Content in the portal.")
+                    return 1
+                presences = False
+                logger.warning(
+                    "The Presence intent is off in the Discord Developer Portal: starting without "
+                    "online status and games. Enable it to let Marione learn members' habits."
+                )
             except (discord.DiscordException, OSError, TimeoutError) as exc:
                 policy = restart_policy(exc)
                 logger.error("The bot stopped: %r", exc)

@@ -18,8 +18,10 @@ from marione.agent import prompt as prompts
 from marione.bot.texts import rob_line, rob_refusal
 from marione.db.settings import FEATURES
 from marione.db.sounds import MAX_BYTES, MAX_PER_MEMBER, SoundError
+from marione.domain.habits import describe as describe_habits
 from marione.i18n import LANGS, normalize, t, unit
 from marione.llm.budget import period_starts
+from marione.media.ytdl import MusicError, Track, is_url, source_of
 from marione.ports import GuildMember, PlayOutcome
 from marione.web import oauth, session
 from marione.web.deps import WebDeps
@@ -574,6 +576,173 @@ async def board_remove(request: web.Request) -> web.Response:
     return web.json_response({"ok": True})
 
 
+# --- music ---------------------------------------------------------------------------------------
+
+MUSIC_ERRORS = {
+    "not_in_voice": (409, "not_in_voice", "not_in_voice"),
+    "busy": (409, "busy", "music_busy"),
+    "queue_full": (409, "limit", "music_queue_full"),
+    "error": (502, "error", "music_error"),
+}
+
+
+def _music(request: web.Request, who: Who) -> tuple[Any, web.Response | None]:
+    player = _deps(request).music
+    if player is None:
+        return None, fail(409, "feature_off", t("feature_off", who.lang))
+    return player, None
+
+
+async def music_state(request: web.Request) -> web.Response:
+    who, err = await _auth(request)
+    if err:
+        return err
+    player, err = _music(request, who)
+    if err:
+        return err
+    deps = _deps(request)
+    recent = []
+    for play in await deps.services.music.recent(10):
+        member = deps.guild.member(play.user_id)
+        recent.append(
+            {
+                "title": play.title,
+                "url": play.url,
+                "duration": play.duration,
+                "by": member.name if member else None,
+                "at": iso(play.played_at),
+            }
+        )
+    return web.json_response(
+        {
+            "ok": True,
+            **player.snapshot(),
+            "volume": await player.volume(),
+            "inVoice": who.member.voice_channel is not None,
+            "recent": recent,
+        }
+    )
+
+
+def _track_json(track: Any) -> dict[str, Any]:
+    return {
+        "title": track.title,
+        "url": track.url,
+        "duration": track.duration,
+        "channel": track.channel,
+        "thumbnail": track.thumbnail,
+        "source": track.source,
+    }
+
+
+async def music_search(request: web.Request) -> web.Response:
+    who, err = await _auth(request)
+    if err:
+        return err
+    if limited := _limited(request, who):
+        return limited
+    if off := await _feature_off(request, who, "music"):
+        return off
+    query = request.query.get("q", "").strip()[:200]
+    if not query:
+        return fail(400, "bad_request", t("music_not_found", who.lang))
+    ytdl = _deps(request).services.ytdl
+    try:
+        tracks = [await ytdl.resolve(query)] if is_url(query) else await ytdl.search(query, 10)
+    except MusicError:
+        return fail(502, "error", t("music_error", who.lang))
+    return web.json_response({"ok": True, "results": [_track_json(x) for x in tracks]})
+
+
+async def music_play(request: web.Request) -> web.Response:
+    who, err = await _auth(request)
+    if err:
+        return err
+    if limited := _limited(request, who):
+        return limited
+    if off := await _feature_off(request, who, "music"):
+        return off
+    player, err = _music(request, who)
+    if err:
+        return err
+    body = await _json(request)
+    url, title = body.get("url"), body.get("title")
+    if not isinstance(url, str) or not is_url(url) or not isinstance(title, str) or not title:
+        return fail(400, "bad_request", t("music_not_found", who.lang))
+    channel = _deps(request).guild.voice_channel_of(who.id)
+    if channel is None:
+        return fail(409, "not_in_voice", t("not_in_voice", who.lang))
+    duration = _int(body.get("duration"))
+    thumb = body.get("thumbnail")
+    owner = body.get("channel")
+    track = Track(
+        title=title.strip()[:200],
+        url=url,
+        duration=duration if duration and duration > 0 else None,
+        channel=owner if isinstance(owner, str) else None,
+        thumbnail=thumb if isinstance(thumb, str) and thumb.startswith("https://") else None,
+        source=source_of(url),
+    )
+    status, position = await player.request(
+        track, who.id, who.member.name, channel, now=body.get("now") is True
+    )
+    if status in MUSIC_ERRORS:
+        code, name, key = MUSIC_ERRORS[status]
+        return fail(code, name, t(key, who.lang))
+    key = "music_playing" if status == "playing" else "music_queued"
+    return web.json_response(
+        {
+            "ok": True,
+            "status": status,
+            "position": position,
+            "message": plain(t(key, who.lang, title=track.title, position=position)),
+        }
+    )
+
+
+async def music_control(request: web.Request) -> web.Response:
+    who, err = await _auth(request)
+    if err:
+        return err
+    player, err = _music(request, who)
+    if err:
+        return err
+    action = request.match_info["action"]
+    body = await _json(request)
+    if action == "skip":
+        if await player.skip() == "nothing":
+            return fail(409, "bad_request", t("music_nothing", who.lang))
+        message = t("music_skipped", who.lang)
+    elif action == "stop":
+        player.stop()
+        message = t("music_stopped", who.lang)
+    elif action == "pause":
+        if player.queue.current is None:
+            return fail(409, "bad_request", t("music_nothing", who.lang))
+        message = t("music_paused" if player.toggle_pause() else "music_resumed", who.lang)
+    elif action == "volume":
+        percent = _int(body.get("percent"))
+        if percent is None:
+            return fail(400, "bad_request", t("volume_invalid", who.lang))
+        await player.set_volume(percent)
+        message = ""
+    elif action == "remove":
+        index = _int(body.get("index"))
+        if index is None or not player.remove(index):
+            return fail(404, "not_found", t("music_nothing", who.lang))
+        message = t("deleted", who.lang)
+    else:
+        raise web.HTTPNotFound()
+    return web.json_response(
+        {
+            "ok": True,
+            "message": plain(message),
+            **player.snapshot(),
+            "volume": await player.volume(),
+        }
+    )
+
+
 # --- entrance sounds (administrators only) -------------------------------------------------------
 
 
@@ -857,6 +1026,12 @@ async def memory_member(request: web.Request) -> web.Response:
     total, lines = await insight.member_lines(uid, offset, limit)
     guild_member = deps.guild.member(uid)
     name = guild_member.name if guild_member else await deps.services.ledger.name_of(uid, str(uid))
+    now = datetime.now(UTC)
+    habits = describe_habits(
+        await deps.services.habits.observations(uid, now),
+        ZoneInfo(deps.services.config.timezone),
+        now,
+    )
     return web.json_response(
         {
             "ok": True,
@@ -875,6 +1050,7 @@ async def memory_member(request: web.Request) -> web.Response:
                 }
                 for f in await insight.facts(uid)
             ],
+            "habits": habits,
             "episodes": [
                 {"id": e.id, "text": e.text, "at": iso(e.created_at)}
                 for e in await insight.episodes(uid)
@@ -913,6 +1089,7 @@ async def memory_forget(request: web.Request) -> web.Response:
         return fail(400, "bad_request", t("member_not_found", who.lang))
     svc = _deps(request).services
     removed = await svc.memory.forget_member(uid) + await svc.chatlog.forget_member(uid)
+    removed += await svc.music.forget_member(uid) + await svc.habits.forget_member(uid)
     return web.json_response({"ok": True, "removed": removed})
 
 
@@ -988,6 +1165,10 @@ def add_routes(app: web.Application) -> None:
     r.add_post("/api/soundboard/add", board_add)
     r.add_post("/api/soundboard/rename", board_rename)
     r.add_post("/api/soundboard/remove", board_remove)
+    r.add_get("/api/music/state", music_state)
+    r.add_get("/api/music/search", music_search)
+    r.add_post("/api/music/play", music_play)
+    r.add_post("/api/music/{action}", music_control)
     r.add_get("/api/entrance/members", entrance_members)
     r.add_get("/api/entrance/list", entrance_list)
     r.add_get("/api/entrance/audio", entrance_audio)

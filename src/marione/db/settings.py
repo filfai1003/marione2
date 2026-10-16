@@ -6,7 +6,7 @@ from marione.db.pool import Pool
 from marione.i18n import DEFAULT as DEFAULT_LANG
 from marione.i18n import normalize
 
-FEATURES = ("economy", "sound", "soundboard", "roles", "rob", "agent")
+FEATURES = ("economy", "sound", "soundboard", "music", "roles", "rob", "agent", "habits")
 # Switched on by an admin: it creates and assigns roles in the server.
 DEFAULT_OFF = frozenset({"roles"})
 DEFAULT_VOLUME = 80

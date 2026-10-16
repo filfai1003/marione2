@@ -14,7 +14,8 @@ MAX_UPLOAD = 9 * 1024 * 1024  # one sound is capped at 8 MB; the rest is form ov
 CSP = (
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' "
     "https://fonts.googleapis.com; font-src https://fonts.gstatic.com; "
-    "img-src 'self' data: https://cdn.discordapp.com; media-src 'self' blob:; "
+    "img-src 'self' data: https://cdn.discordapp.com https://*.ytimg.com https://*.sndcdn.com; "
+    "media-src 'self' blob:; "
     "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 )
 

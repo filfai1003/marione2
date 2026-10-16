@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 import httpx
 
 from marione.bot.context import Services
+from marione.bot.music import MusicPlayer
 from marione.domain.limits import PlayLimiter
 from marione.llm.catalog import ModelCatalog
 from marione.ports import GuildView
@@ -18,6 +19,7 @@ class WebDeps:
     # At most 40 changes per member per minute: a runaway script cannot flood the database.
     limiter: PlayLimiter = field(default_factory=lambda: PlayLimiter(40, 60))
     catalog: ModelCatalog | None = None
+    music: MusicPlayer | None = None
 
     def models(self) -> ModelCatalog:
         if self.catalog is None:

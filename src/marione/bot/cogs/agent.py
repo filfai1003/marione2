@@ -50,6 +50,8 @@ class AgentCog(commands.Cog):
             clock=SystemClock(),
             rules=svc.agent_rules,
             chatlog=svc.chatlog,
+            habits=svc.habits,
+            tz=ZoneInfo(cfg.timezone),
             world=DiscordWorld(
                 lambda: self.bot.get_guild(self.bot.guild_id),
                 ZoneInfo(cfg.timezone),

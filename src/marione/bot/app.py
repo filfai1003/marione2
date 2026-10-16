@@ -8,6 +8,7 @@ from discord.ext import commands
 from marione.agent.service import ChatAgent
 from marione.bot.commands_i18n import Translator
 from marione.bot.context import Services
+from marione.bot.music import MusicPlayer
 from marione.bot.voice import VoicePlayer, load_opus
 
 logger = logging.getLogger("marione")
@@ -19,20 +20,32 @@ EXTENSIONS = (
     "marione.bot.cogs.agent",
     "marione.bot.cogs.commands",
     "marione.bot.cogs.legacy",
+    "marione.bot.cogs.tracking",
 )
 
 
 class MarioneBot(commands.Bot):
-    def __init__(self, services: Services, voice: VoicePlayer) -> None:
+    def __init__(
+        self,
+        services: Services,
+        voice: VoicePlayer,
+        music: MusicPlayer | None = None,
+        *,
+        presences: bool = True,
+    ) -> None:
         intents = discord.Intents.default()
         intents.members = True  # to find members by name and see who is in voice
         intents.voice_states = True
         intents.message_content = True  # economy and the chat agent read messages
+        # Online status and games, for the members' habits. Privileged: if it is not enabled
+        # in the Developer Portal the start-up retries without it (see main.run_bot).
+        intents.presences = presences
         super().__init__(command_prefix=commands.when_mentioned, intents=intents)
         self.services = services
         self.guild_id = services.config.guild_id
         self.chat_agent: ChatAgent | None = None
         self.voice = voice
+        self.music = music
 
     async def setup_hook(self) -> None:
         load_opus()

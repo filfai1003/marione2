@@ -148,3 +148,63 @@ class TestPersistence:
 def test_chat_message_defaults_are_backward_compatible() -> None:
     m = ChatMessage(1, "A", "x", 2, 3)
     assert m.reply_text is None and m.attachments == () and m.channel_name == ""
+
+
+class TestHabits:
+    def make(self, pool: Pool, llm: ScriptedLLM, clock: Clock) -> ChatAgent:
+        from zoneinfo import ZoneInfo
+
+        from marione.db.habits import HabitsRepo
+
+        return ChatAgent(
+            llm=llm,
+            ledger=Ledger(pool),
+            memory=MemoryRepo(pool),
+            settings=SettingsRepo(pool),
+            directory=Directory(),
+            config=AgentConfig(model="main", gate_model="cheap"),
+            bot_id=BOT,
+            bot_name=lambda: "Marione",
+            clock=clock,
+            habits=HabitsRepo(pool),
+            tz=ZoneInfo("Europe/Rome"),
+        )
+
+    async def test_observed_habits_reach_the_prompt(self, pool: Pool, clock: Clock) -> None:
+        from marione.db.habits import HabitsRepo
+
+        await Ledger(pool).remember_name(ANNA, "Anna")
+        habits = HabitsRepo(pool)
+        await habits.set_presence(ANNA, "online")
+        await habits.set_activities(ANNA, [("playing", "Minecraft", None)])
+        llm = ScriptedLLM([reply("ciao")])
+        clock.dt = __import__("datetime").datetime.now(__import__("datetime").UTC)
+        await self.make(pool, llm, clock).handle(msg("marione ciao", addressed=True))
+        text = system_text(llm)
+        assert "HABITS" in text and "right now: online, playing Minecraft" in text
+
+    async def test_habits_can_be_switched_off(self, pool: Pool, clock: Clock) -> None:
+        from marione.db.habits import HabitsRepo
+
+        await HabitsRepo(pool).set_presence(ANNA, "online")
+        await SettingsRepo(pool).set_enabled("habits", False)
+        llm = ScriptedLLM([reply("ciao")])
+        await self.make(pool, llm, clock).handle(msg("marione ciao", addressed=True))
+        assert "HABITS" not in system_text(llm)
+
+    async def test_member_info_tool_answers_about_anyone(self, pool: Pool, clock: Clock) -> None:
+        from marione.db.habits import HabitsRepo
+        from marione.db.memory import Fact
+
+        await MemoryRepo(pool).add_fact(BRUNO, Fact("likes", "la carbonara", 4))
+        await HabitsRepo(pool).set_voice(BRUNO, 10, "Gaming")
+        llm = ScriptedLLM(
+            [reply(calls=[("member_info", {"user": "Bruno"})]), reply("bruno? sempre in vocale")]
+        )
+        clock.dt = __import__("datetime").datetime.now(__import__("datetime").UTC)
+        answer = await self.make(pool, llm, clock).handle(
+            msg("marione che fa bruno?", addressed=True)
+        )
+        assert answer is not None and answer.text == "bruno? sempre in vocale"
+        tool_results = [m["content"] for m in llm.calls[-1].messages if m["role"] == "tool"]
+        assert any("la carbonara" in r and "#Gaming" in r for r in tool_results)

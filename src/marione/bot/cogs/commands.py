@@ -22,6 +22,7 @@ from marione.domain.roles import tier_for
 from marione.i18n import LANGS, t, unit
 from marione.labels import describe
 from marione.llm.budget import period_starts
+from marione.media.ytdl import MusicError
 
 if TYPE_CHECKING:
     from marione.bot.app import MarioneBot
@@ -193,7 +194,7 @@ class CommandsCog(commands.Cog):
             await interaction.response.send_message(t("sound_not_found", lang), ephemeral=True)
             return
         volume = await svc.settings.soundboard_volume() / 100
-        status = await self.bot.voice.play(voice.channel, audio.data, volume=volume, interrupt=True)
+        status = await self.bot.voice.play(voice.channel, audio.data, volume=volume)
         ok = status is PlayStatus.OK
         message = f"{found[0].emoji} **{audio.name}**" if ok else t("play_error", lang)
         await interaction.response.send_message(message, ephemeral=not ok)
@@ -226,6 +227,90 @@ class CommandsCog(commands.Cog):
             return
         await interaction.followup.send(t("board_added", lang, name=title), ephemeral=True)
 
+    # --- music -------------------------------------------------------------------------------
+
+    @marione.command(name=_("play"), description=_("Play a song from a link or a title"))
+    @app_commands.rename(query=_("query"))
+    async def music_play(self, interaction: discord.Interaction, query: str) -> None:
+        lang = await self.lang(interaction)
+        svc = self.bot.services
+        player = self.bot.music
+        voice = getattr(interaction.user, "voice", None)
+        if player is None or not await svc.settings.is_enabled("music"):
+            await interaction.response.send_message(t("feature_off", lang), ephemeral=True)
+            return
+        if voice is None or voice.channel is None:
+            await interaction.response.send_message(t("not_in_voice", lang), ephemeral=True)
+            return
+        await interaction.response.defer(thinking=True)
+        try:
+            track = await svc.ytdl.resolve(query)  # a title: the most likely result
+        except MusicError:
+            await interaction.followup.send(t("music_not_found", lang))
+            return
+        status, position = await player.request(
+            track, interaction.user.id, interaction.user.display_name, voice.channel
+        )
+        keys = {
+            "playing": "music_playing",
+            "queued": "music_queued",
+            "busy": "music_busy",
+            "queue_full": "music_queue_full",
+            "not_in_voice": "not_in_voice",
+        }
+        await interaction.followup.send(
+            t(keys.get(status, "music_error"), lang, title=track.title, position=position)
+            + (f"\n<{track.url}>" if status in ("playing", "queued") else "")
+        )
+
+    @marione.command(name=_("skip"), description=_("Skip to the next song"))
+    async def music_skip(self, interaction: discord.Interaction) -> None:
+        lang = await self.lang(interaction)
+        player = self.bot.music
+        if player is None or await player.skip() == "nothing":
+            await interaction.response.send_message(t("music_nothing", lang), ephemeral=True)
+            return
+        await interaction.response.send_message(t("music_skipped", lang))
+
+    @marione.command(name=_("stop"), description=_("Stop the music and clear the queue"))
+    async def music_stop(self, interaction: discord.Interaction) -> None:
+        lang = await self.lang(interaction)
+        if self.bot.music is not None:
+            self.bot.music.stop()
+        await interaction.response.send_message(t("music_stopped", lang))
+
+    @marione.command(name=_("pause"), description=_("Pause or resume the music"))
+    async def music_pause(self, interaction: discord.Interaction) -> None:
+        lang = await self.lang(interaction)
+        player = self.bot.music
+        if player is None or player.queue.current is None:
+            await interaction.response.send_message(t("music_nothing", lang), ephemeral=True)
+            return
+        paused = player.toggle_pause()
+        await interaction.response.send_message(
+            t("music_paused" if paused else "music_resumed", lang)
+        )
+
+    @marione.command(name=_("queue"), description=_("What is playing and what comes next"))
+    async def music_queue(self, interaction: discord.Interaction) -> None:
+        lang = await self.lang(interaction)
+        player = self.bot.music
+        current = player.queue.current if player else None
+        if player is None or current is None:
+            await interaction.response.send_message(t("music_nothing", lang), ephemeral=True)
+            return
+        lines = [
+            t("music_queue_title", lang),
+            f"▶️ **{current.track.title}** · {current.requester_name}",
+        ]
+        lines += [
+            f"`{i}.` {e.track.title} · {e.requester_name}"
+            for i, e in enumerate(player.queue.upcoming[:10], start=1)
+        ]
+        if not player.queue.upcoming:
+            lines.append(t("music_next_empty", lang))
+        await interaction.response.send_message("\n".join(lines)[:1900], ephemeral=True)
+
     @marione.command(name=_("language"), description=_("The language Marione uses with you"))
     @app_commands.rename(language=_("language"))
     @app_commands.choices(language=LANGUAGE_CHOICES)
@@ -250,6 +335,9 @@ class CommandsCog(commands.Cog):
             else await svc.memory.forget_member(interaction.user.id)
         )
         count += await svc.chatlog.forget_member(interaction.user.id)
+        count += await svc.music.forget_member(interaction.user.id)
+        if agent is None:
+            count += await svc.habits.forget_member(interaction.user.id)
         await interaction.response.send_message(t("forgot", lang, count=count), ephemeral=True)
 
     # --- administrators ------------------------------------------------------------------------

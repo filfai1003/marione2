@@ -54,6 +54,32 @@ COMMAND_TEXTS: dict[str, dict[str, str]] = {
         "it": "Cancella tutto quello che Marione ricorda di te",
         "fr": "Efface tout ce dont Marione se souvient sur toi",
     },
+    "play": {"it": "suona", "fr": "jouer"},
+    "Play a song from a link or a title": {
+        "it": "Suona una canzone da un link o da un titolo",
+        "fr": "Joue un morceau depuis un lien ou un titre",
+    },
+    "skip": {"it": "salta", "fr": "passer"},
+    "Skip to the next song": {
+        "it": "Passa alla prossima canzone",
+        "fr": "Passe au morceau suivant",
+    },
+    "stop": {"it": "ferma", "fr": "arreter"},
+    "Stop the music and clear the queue": {
+        "it": "Ferma la musica e svuota la coda",
+        "fr": "Arrête la musique et vide la file",
+    },
+    "pause": {"it": "pausa", "fr": "pause"},
+    "Pause or resume the music": {
+        "it": "Metti in pausa o riprendi la musica",
+        "fr": "Met en pause ou reprend la musique",
+    },
+    "queue": {"it": "coda", "fr": "file"},
+    "What is playing and what comes next": {
+        "it": "Cosa sta suonando e cosa viene dopo",
+        "fr": "Ce qui joue et ce qui suit",
+    },
+    "query": {"it": "cerca", "fr": "recherche"},
     # /marione-admin
     "give": {"it": "regala", "fr": "donner"},
     "Give Marioncelli to a member": {

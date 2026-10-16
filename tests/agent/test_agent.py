@@ -173,7 +173,14 @@ class TestTools:
 
     async def test_specs_have_names_and_schemas_without_titles(self) -> None:
         specs = {s.name: s for s in chat_registry().specs()}
-        assert set(specs) == {"get_balance", "get_leaderboard", "gift", "fine", "stay_silent"}
+        assert set(specs) == {
+            "get_balance",
+            "member_info",
+            "get_leaderboard",
+            "gift",
+            "fine",
+            "stay_silent",
+        }
         assert "title" not in json.dumps(specs["gift"].parameters)
         assert set(specs["gift"].parameters["required"]) == {"user", "amount", "comment"}
 

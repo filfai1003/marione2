@@ -86,6 +86,13 @@ Liste paginate (mai liste infinite): `offset` (da 0) e `limit` (1–50, predefin
 `POST /api/soundboard/rename` `{"id":"7","name":"Nuovo","emoji":"🎺"}` — il creatore o un admin.
 `POST /api/soundboard/remove` `{"id":"7"}` — **solo admin** (altrimenti `forbidden`).
 
+## Musica
+
+`GET /api/music/state` → `{"ok":true,"nowPlaying":{"title","url","duration","channel","thumbnail","source","requestedBy","position","paused"}|null,"queue":[{…senza position/paused…}],"lastError":null,"volume":50,"inVoice":true,"recent":[{"title","url","duration","by","at"}]}` (poll ~5 s sulla pagina Musica).
+`GET /api/music/search?q=` → `{"ok":true,"results":[{"title","url","duration","channel","thumbnail","source"}]}`: 10 risultati per un titolo, 1 per un link. Errore `error` (502) se le piattaforme rifiutano.
+`POST /api/music/play` `{…un risultato…, "now": false}` → `{"ok":true,"status":"playing|queued","position":0,"message":"…"}`; `now:true` la suona subito. Errori: `not_in_voice`, `busy` (musica per altri in un altro canale), `limit` (coda piena), `error`.
+`POST /api/music/skip|stop|pause|volume|remove` (`volume`: `{"percent":50}`, `remove`: `{"index":0}`) → stato aggiornato + `message`.
+
 ## Suoni d'entrata — SOLO ADMIN
 
 Per chi non è admin ogni endpoint qui risponde `403 forbidden` e la pagina "Entrate" non si mostra. L'admin gestisce i suoni di qualunque membro.
@@ -127,6 +134,8 @@ Per chi non è admin ogni endpoint qui risponde `403 forbidden` e la pagina "Ent
  "messages":{"total":31,"items":[{"channel":"#general","text":"…","at":"…"}]}}
 ```
 (`messages` = le ultime 20 righe di chat di quel membro che l'AI tiene come contesto; pagina con `&offset=&limit=`.)
+
+Nel dettaglio membro c'è anche `"habits": ["right now: online, playing Minecraft", "usually online 20:00–01:00 (…)", …]` (in inglese, come li vede il modello).
 
 `POST /api/admin/memory/fact/delete` `{"id":11}` → `{"ok":true}`.
 `POST /api/admin/memory/forget` `{"memberId":"2"}` → `{"ok":true,"removed":37}` — cancella fatti, episodi e righe di chat di quel membro (come `/marione dimentica`).

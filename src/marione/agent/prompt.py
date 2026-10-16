@@ -31,6 +31,7 @@ class ChatContext:
     tiers: dict[str, str] = field(default_factory=dict)  # member name -> "Cameriere, #7 of 128"
     events: list[str] = field(default_factory=list)  # recent money events, oldest first
     world: WorldSnapshot | None = None
+    habits: dict[str, list[str]] = field(default_factory=dict)  # member name -> observed habits
 
 
 def render_world(world: WorldSnapshot) -> str:
@@ -41,6 +42,8 @@ def render_world(world: WorldSnapshot) -> str:
         lines.append(f"- In voice, {channel}: {', '.join(names)}")
     if not world.voice:
         lines.append("- Nobody is in a voice channel.")
+    if world.online:
+        lines.append("- Online now: " + ", ".join(world.online))
     return "SERVER NOW:\n" + "\n".join(lines)
 
 
@@ -68,6 +71,12 @@ def render_context(ctx: ChatContext) -> str:
     ]
     if profiles:
         parts.append("PROFILES (private):\n" + "\n".join(profiles))
+    observed = [f"- {name}: " + "; ".join(lines) for name, lines in ctx.habits.items() if lines]
+    if observed:
+        parts.append(
+            "HABITS (what you have noticed yourself; private — use it like a friend who just "
+            "knows, never recite it like a report):\n" + "\n".join(observed)
+        )
     if ctx.episodes:
         parts.append("MEMORIES:\n" + "\n".join(f"- {e}" for e in ctx.episodes))
     return "\n\n".join(parts) if parts else "(no data about the members involved)"

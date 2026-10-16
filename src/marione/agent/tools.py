@@ -33,6 +33,8 @@ class ToolContext:
     economy_enabled: bool
     audit: dict[str, Any]  # who/where this came from; stored in the ledger entry
     actions: list[ActionRecord] = field(default_factory=list)
+    # What Marione knows about a member (notes + observed habits), for `member_info`.
+    profile: Callable[[int], Awaitable[dict[str, Any]]] | None = None
 
 
 Handler = Callable[[ToolContext, Any], Awaitable[dict[str, Any]]]
@@ -127,6 +129,13 @@ async def _get_balance(ctx: ToolContext, args: _UserArg) -> dict[str, Any]:
     return {"user": member.name, "balance": await ctx.ledger.balance(member.id)}
 
 
+async def _member_info(ctx: ToolContext, args: _UserArg) -> dict[str, Any]:
+    member = _resolve(ctx, args.user)
+    if ctx.profile is None:
+        raise ToolError("no information available")
+    return {"user": member.name, **await ctx.profile(member.id)}
+
+
 async def _get_leaderboard(ctx: ToolContext, _: _NoArgs) -> dict[str, Any]:
     top = await ctx.ledger.top(5)
     return {"top": [{"user": name or str(uid), "balance": bal} for uid, name, bal in top]}
@@ -180,6 +189,15 @@ def chat_registry() -> ToolRegistry:
                 "Look up how many Marioncelli a member has.",
                 _UserArg,
                 _get_balance,
+            ),
+            Tool(
+                "member_info",
+                "Everything you know about a member: your notes on them and their observed "
+                "habits (when they are online, voice time, the games they play, what they "
+                "listen to). Use it when someone not in the conversation comes up, or to recall "
+                "details. Private knowledge: weave it in naturally, never recite it.",
+                _UserArg,
+                _member_info,
             ),
             Tool(
                 "get_leaderboard",

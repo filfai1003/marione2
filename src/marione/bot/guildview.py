@@ -2,6 +2,7 @@
 
 import logging
 from collections.abc import Callable
+from typing import Any
 
 import discord
 
@@ -54,8 +55,13 @@ class DiscordGuildView:
         channel = found.voice.channel if found and found.voice else None
         if channel is None:
             return PlayOutcome.NOT_IN_VOICE
-        status = await self._voice.play(channel, data, volume=volume_pct / 100, interrupt=True)
+        status = await self._voice.play(channel, data, volume=volume_pct / 100)
         return _OUTCOMES[status]
+
+    def voice_channel_of(self, user_id: int) -> Any:
+        guild = self._guild()
+        found = guild.get_member(user_id) if guild else None
+        return found.voice.channel if found and found.voice else None
 
     def stop_audio(self) -> bool:
         return self._voice.stop()

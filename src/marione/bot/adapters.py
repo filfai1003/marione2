@@ -6,6 +6,8 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import discord
+
 from marione.agent.types import ActionRecord, ChatMessage, MemberRef, Reply, WorldSnapshot
 from marione.domain.triggers import is_called
 
@@ -135,8 +137,20 @@ class DiscordWorld:
                 names = tuple(m.display_name for m in vc.members if not m.bot)
                 if names:
                     voice.append((vc.name, names))
+        online: list[str] = []
+        if guild is not None:
+            for m in guild.members:
+                if m.bot or str(getattr(m, "status", "offline")) in ("offline", "invisible"):
+                    continue
+                games = [
+                    a.name
+                    for a in getattr(m, "activities", ())
+                    if isinstance(a, discord.Game | discord.Streaming) and a.name
+                ]
+                online.append(f"{m.display_name} (playing {games[0]})" if games else m.display_name)
         return WorldSnapshot(
             local_time=italian_time(self._now().astimezone(self._tz)),
+            online=tuple(online[:25]),
             channel=f"#{channel.name}" if channel is not None else "(unknown)",
             topic=(getattr(channel, "topic", None) or None),
             voice=tuple(voice),

@@ -9,6 +9,7 @@ import { modal, preview } from './ui.js';
 import * as home from './pages/home.js';
 import * as economy from './pages/economy.js';
 import * as soundboard from './pages/soundboard.js';
+import * as music from './pages/music.js';
 import * as entrances from './pages/entrances.js';
 import * as brain from './pages/brain.js';
 import * as settings from './pages/settings.js';
@@ -18,6 +19,7 @@ const PAGES = {
   home: { emoji: '🛋️', mod: home, main: true },
   economy: { emoji: '💰', mod: economy, main: true },
   soundboard: { emoji: '🔊', mod: soundboard, main: true },
+  music: { emoji: '🎵', mod: music, main: true },
   entrances: { emoji: '🎺', mod: entrances, admin: true },
   brain: { emoji: '🧠', mod: brain, admin: true },
   settings: { emoji: '⚙️', mod: settings, admin: true },

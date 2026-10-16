@@ -33,6 +33,8 @@ export function mount(root) {
   const off = h('div'), body = h('div', { class: 'stack' });
   root.append(off, body);
   let filter = 'all', query = '';
+  let sort = 'name';
+  try { sort = localStorage.getItem('marione-board-sort') || 'name'; } catch { /* storage blocked */ }
 
   // ---- sticky controls: volume, stop, search, filters, add ----
   const volOut = h('output', { class: 'vol-out' }, '80%');
@@ -47,10 +49,18 @@ export function mount(root) {
   const search = searchBox(t('board.search'), (q) => { query = q.toLowerCase(); draw(); }, 120);
   const chips = chipGroup([['all', t('board.fAll')], ['fav', '★ ' + t('board.fFav')], ['mine', t('board.fMine')]], filter,
     (k) => { filter = k; draw(); }, t('board.filter'));
+  const sortSel = h('select', { class: 'sort-pick', 'aria-label': t('board.sort') },
+    [['name', t('board.sortName')], ['short', t('board.sortShort')], ['long', t('board.sortLong')]].map(([v, l]) =>
+      h('option', { value: v, selected: v === sort }, l)));
+  sortSel.addEventListener('change', () => {
+    sort = sortSel.value;
+    try { localStorage.setItem('marione-board-sort', sort); } catch { /* storage blocked */ }
+    draw();
+  });
   const bar = h('div', { class: 'card controls sticky' },
     h('div', { class: 'controls-row' },
       h('label', { class: 'vol' }, h('span', { class: 'field-label' }, '🔈 ' + t('board.volume')), vol, volOut), stopBtn),
-    h('div', { class: 'controls-row' }, search.el, chips, addBtn));
+    h('div', { class: 'controls-row' }, search.el, chips, h('label', { class: 'sort' }, h('span', { class: 'field-label' }, '↕ ' + t('board.sort')), sortSel), addBtn));
   const count = h('p', { class: 'muted small', 'aria-live': 'polite' });
   const grid = h('div');
   body.append(bar, count, grid);
@@ -91,11 +101,17 @@ export function mount(root) {
     const s = store.state;
     if (!s) return;
     const admin = s.me.isAdmin;
-    const all = [...s.sounds].sort((a, b) => (b.fav - a.fav) || a.name.localeCompare(b.name, locale()));
+    const byName = (a, b) => a.name.localeCompare(b.name, locale());
+    const order = {
+      name: byName,
+      short: (a, b) => (a.durationMs - b.durationMs) || byName(a, b),
+      long: (a, b) => (b.durationMs - a.durationMs) || byName(a, b),
+    }[sort] || byName;
+    const all = [...s.sounds].sort(order);
     const list = all.filter((x) => (filter === 'fav' ? x.fav : filter === 'mine' ? x.own : true)
       && (!query || x.name.toLowerCase().includes(query)));
     count.textContent = t('board.count', { shown: list.length, total: all.length });
-    region(grid, JSON.stringify([list, admin, filter, query, preview.key(), t('board.fAll')]), () => {
+    region(grid, JSON.stringify([list, admin, filter, query, sort, preview.key(), t('board.fAll')]), () => {
       if (!all.length) return empty('🔇', t('board.empty'));
       if (!list.length) return empty('🔎', t('board.noMatch'));
       const tiles = (xs) => h('div', { class: 'tiles' }, xs.map((x) => tile(x, x.own || admin, admin)));

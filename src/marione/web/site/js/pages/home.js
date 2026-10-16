@@ -39,7 +39,8 @@ export function mount(root) {
     return h('div', { class: 'grid g-quick' },
       m.economy ? q('#/economy/send', '💸', t('home.qSend'), t('home.qSendSub')) : null,
       m.economy && m.rob ? q('#/economy/heist', '🦹', t('home.qRob'), t('home.qRobSub'), 'danger') : null,
-      m.soundboard ? q('#/soundboard', '🔊', t('home.qBoard'), t('home.qBoardSub'), 'green') : null);
+      m.soundboard ? q('#/soundboard', '🔊', t('home.qBoard'), t('home.qBoardSub'), 'green') : null,
+      m.music ? q('#/music', '🎵', t('home.qMusic'), t('home.qMusicSub')) : null);
   }
 
   function update() {

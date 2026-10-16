@@ -50,9 +50,7 @@ class EntranceCog(commands.Cog):
             return
         volume = await svc.settings.soundboard_volume() / 100
         # An entrance never cuts off a sound and never pulls the bot away from other people.
-        await self.bot.voice.play(
-            after.channel, sound.data, volume=volume, interrupt=False, move=False
-        )
+        await self.bot.voice.play(after.channel, sound.data, volume=volume, move=False)
 
     @tasks.loop(seconds=60)
     async def reaper(self) -> None:

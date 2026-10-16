@@ -80,6 +80,8 @@ export function mount(root, sub) {
           h('span', { class: 'fact-text' }, f.text), dots(f.confidence),
           h('button', { type: 'button', class: 'icon-btn del', 'aria-label': t('common.delete'), title: t('common.delete'), onclick: () => delFact(f) }, '🗑')))))))
         : empty('🫙', t('brain.noFacts')),
+      h('h3', { class: 'section-title' }, '📈 ' + t('brain.habits')),
+      r.habits && r.habits.length ? h('ul', { class: 'habits' }, r.habits.map((line) => h('li', null, line))) : empty('🫙', t('brain.noHabits')),
       h('h3', { class: 'section-title' }, '🎞️ ' + t('brain.episodes')),
       r.episodes.length ? h('ul', { class: 'quotes' }, r.episodes.map((e) => h('li', null, h('p', null, e.text), h('small', null, ago(e.at)))))
         : empty('🫙', t('brain.noEpisodes')),

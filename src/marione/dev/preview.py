@@ -15,8 +15,10 @@ import struct
 import wave
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from marione.bot.context import Services, build_services
+from marione.bot.music import MusicPlayer
 from marione.config import Settings
 from marione.db.memory import Fact
 from marione.db.pool import Pool, create_pool, migrate
@@ -47,6 +49,46 @@ def tone(freq: float, seconds: float, rate: int = 8000) -> bytes:
     return out.getvalue()
 
 
+class FakeMixer:
+    """Stands in for the audio mixer: remembers what would be playing."""
+
+    def __init__(self) -> None:
+        self.music_paused = False
+        self._music: Any = None
+
+    @property
+    def has_music(self) -> bool:
+        return self._music is not None
+
+    def stop_music(self) -> None:
+        self._music = None
+
+
+class FakeVoice:
+    """Stands in for the voice connection: music "plays" instantly and never ends by itself."""
+
+    def __init__(self) -> None:
+        self.on_music_end: Any = None
+        self.on_leave: Any = None
+        self.mixer = FakeMixer()
+        self.played: list[tuple[Any, Any]] = []
+
+    async def play_music(self, channel: Any, source: Any) -> str:
+        self.mixer._music = source
+        self.played.append((channel, source))
+        return "ok"
+
+    def kick(self) -> None:
+        pass
+
+    def client(self) -> Any:
+        return None
+
+
+def fake_source(url: str, headers: dict[str, str], volume: float) -> Any:
+    return {"url": url, "volume": volume}
+
+
 @dataclass
 class FakeGuild:
     """A stand-in for the Discord server: members, one voice room, a log of what was played."""
@@ -73,6 +115,10 @@ class FakeGuild:
     def stop_audio(self) -> bool:
         self.stopped += 1
         return True
+
+    def voice_channel_of(self, user_id: int) -> Any:
+        who = self.people.get(user_id)
+        return who.voice_channel if who else None
 
     def channel_name(self, channel_id: int) -> str | None:
         return self.channels.get(channel_id)
@@ -164,6 +210,31 @@ async def seed(services: Services, guild: FakeGuild) -> None:
     ]
     for i, (uid, name, text) in enumerate(lines):
         await log.append(10, 500 + i, uid, name, text, is_bot=uid == 0)
+    # Some observed habits for Marcello: online every evening, Minecraft, voice, messages.
+    pool = services.pool
+    for day in range(1, 15):
+        await pool.execute(
+            "insert into marione.presence_spans (user_id, status, started_at, ended_at)"
+            " values ($1, 'online', now() - make_interval(days => $2, hours => 4),"
+            " now() - make_interval(days => $2, hours => 1))",
+            ME + 1,
+            day,
+        )
+        await pool.execute(
+            "insert into marione.activity_spans (user_id, kind, name, started_at, ended_at)"
+            " values ($1, 'playing', $3, now() - make_interval(days => $2, hours => 3),"
+            " now() - make_interval(days => $2, hours => 2))",
+            ME + 1,
+            day,
+            "Minecraft" if day % 3 else "Rocket League",
+        )
+    await pool.execute(
+        "insert into marione.voice_spans (user_id, channel_id, channel_name, started_at, ended_at)"
+        " values ($1, 5, 'Gaming', now() - interval '2 days 3 hours', now() - interval '2 days')",
+        ME + 1,
+    )
+    await services.habits.set_presence(ME + 1, "online")
+    await services.habits.set_activities(ME + 1, [("playing", "Minecraft", None)])
 
 
 async def serve(pool: Pool, port: int) -> None:
@@ -177,7 +248,10 @@ async def serve(pool: Pool, port: int) -> None:
     services = build_services(config, pool)
     guild = FakeGuild()
     await seed(services, guild)
-    deps = WebDeps(services, guild, dev_user_id=ME)
+    music = MusicPlayer(
+        FakeVoice(), services.ytdl, services.music, services.settings, source_factory=fake_source
+    )
+    deps = WebDeps(services, guild, dev_user_id=ME, music=music)
 
     async def database_ok() -> bool:
         return True

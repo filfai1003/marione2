@@ -11,6 +11,8 @@ OpenRouter. Tutti i dati vivono nel suo database: niente è salvato nei messaggi
 | Ruoli ricchezza | 12 ruoli (da *Morto di fame* a *Divinità Spaghettara*) assegnati in base al saldo. Creati e gestiti solo da Marione. **Spenti di default**: li accende un admin. |
 | Furto | `/marione deruba`: probabilità e multa calcolate in modo che tentare sia sempre in perdita; se ti beccano paghi la multa alla vittima. Un tentativo l'ora, il tempo è nel database. |
 | Soundboard | Libreria di suoni condivisa: tutti aggiungono (sito o `/marione soundboard-add`) e suonano nella propria vocale; solo gli admin eliminano. |
+| Musica | `/marione play <link o titolo>` (dal titolo prende il risultato più probabile), skip, stop, pause, queue; dal sito si cercano 10 risultati e si sceglie. YouTube via yt-dlp, con ripiego automatico su SoundCloud quando YouTube blocca il server (per YouTube vero: `YTDLP_COOKIES`). Musica ed effetti della soundboard suonano insieme (mixer). |
+| Abitudini | Marione nota quando i membri sono online, in vocale, a cosa giocano, cosa ascoltano, quando scrivono e che canzoni chiedono; lo usa in chat (strumento `member_info`) e gli admin lo vedono nel "cervello". 90 giorni, cancellabile con `/marione forget`, funzione `habits` spegnibile. Online e giochi richiedono l'intent **Presence**. |
 | Presenza in vocale | Marione entra appena qualcuno entra in vocale e resta finché non rimane solo. |
 | Suoni d'entrata | Quando entri in vocale suona uno dei tuoi audio a caso. Li gestiscono solo gli admin (dal sito o con `/marione-admin entrance-*`). |
 | Chat con l'AI | Risponde se chiamato o quando ha qualcosa da dire (OpenRouter). Vede cosa stai citando, chi è in vocale, il tuo ruolo e i movimenti recenti; ricorda i membri in modo strutturato; la conversazione sopravvive ai riavvii. Può regalare o multare monete con tetti rigidi. |
@@ -18,7 +20,8 @@ OpenRouter. Tutti i dati vivono nel suo database: niente è salvato nei messaggi
 | Lingue | Inglese (predefinito), italiano, francese: sito, risposte del bot e nomi dei comandi Discord (tradotti in base alla lingua dell'app Discord). Ognuno sceglie con `/marione language` o dal sito; l'admin sceglie la lingua degli annunci pubblici. |
 
 Comandi (nomi inglesi, mostrati in italiano/francese a chi ha Discord in quella lingua):
-`/marione` balance, pay, rob, leaderboard, history, soundboard, soundboard-add, language, forget ·
+`/marione` balance, pay, rob, leaderboard, history, soundboard, soundboard-add, play, skip, stop,
+pause, queue, language, forget ·
 `/marione-admin` give, fine, set, undo, feature, status, server-language, entrance-add/list/remove,
 soundboard-remove, import-old.
 
@@ -45,7 +48,8 @@ Vedi `.env.example`. Obbligatorie: `DISCORD_TOKEN`, `GUILD_ID`, `DATABASE_URL`. 
 1. Servizio nello stesso progetto del Postgres, `DATABASE_URL` sulla rete privata; il `Dockerfile` e
    `railway.toml` sono pronti. Le migrazioni girano all'avvio (lock consultivo, una transazione per
    file) e `/health` risponde 200/503.
-2. Discord Developer Portal → bot: attiva gli intent **Server Members** e **Message Content**.
+2. Discord Developer Portal → bot: attiva gli intent **Server Members**, **Message Content** e
+   **Presence** (senza Presence il bot parte lo stesso, ma senza stato online e giochi).
    Permessi: Connect, Speak, Manage Roles (per i ruoli ricchezza), Send Messages.
 3. Discord → OAuth2: aggiungi `https://<tuo-dominio>/auth/callback` ai redirect.
 4. Il ruolo di Marione deve stare **sopra** i ruoli ricchezza nella lista dei ruoli del server.

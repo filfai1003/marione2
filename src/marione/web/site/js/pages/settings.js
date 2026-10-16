@@ -10,7 +10,7 @@ import { pageHead, field, btn, fillSelect, progress, collapsible, fieldError, se
 const SUGGESTED = ['anthropic/claude-haiku-4.5', 'anthropic/claude-sonnet-4.5', 'openai/gpt-5-mini', 'openai/gpt-5-nano',
   'google/gemini-2.5-flash', 'google/gemini-2.5-flash-lite', 'deepseek/deepseek-chat-v3.1', 'mistralai/mistral-small-3.2-24b-instruct'];
 const MODS = [
-  ['economy', '💰'], ['sound', '🎺'], ['soundboard', '🔊'], ['roles', '🎖️', true], ['rob', '🦹'], ['agent', '🤖'],
+  ['economy', '💰'], ['sound', '🎺'], ['soundboard', '🔊'], ['music', '🎵'], ['roles', '🎖️', true], ['rob', '🦹'], ['agent', '🤖'], ['habits', '📈'],
 ];
 
 export function mount(root) {

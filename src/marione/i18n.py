@@ -256,6 +256,56 @@ M: Final[dict[str, dict[str, str]]] = {
         "it": "🧽 Fatto: ho dimenticato {count} cose su di te.",
         "fr": "🧽 C'est fait : j'ai oublié {count} choses sur toi.",
     },
+    # --- music --------------------------------------------------------------------------------
+    "music_playing": {
+        "en": "🎵 Now playing: **{title}**",
+        "it": "🎵 Ora suona: **{title}**",
+        "fr": "🎵 Lecture en cours : **{title}**",
+    },
+    "music_queued": {
+        "en": "➕ Queued (#{position}): **{title}**",
+        "it": "➕ In coda (#{position}): **{title}**",
+        "fr": "➕ Ajouté à la file (#{position}) : **{title}**",
+    },
+    "music_busy": {
+        "en": "I'm already playing music for people in another channel.",
+        "it": "Sto già facendo musica per qualcuno in un altro canale.",
+        "fr": "Je joue déjà de la musique pour d'autres dans un autre salon.",
+    },
+    "music_queue_full": {
+        "en": "The queue is full (50 songs).",
+        "it": "La coda è piena (50 canzoni).",
+        "fr": "La file est pleine (50 morceaux).",
+    },
+    "music_not_found": {
+        "en": "I couldn't find anything to play.",
+        "it": "Non ho trovato niente da suonare.",
+        "fr": "Je n'ai rien trouvé à jouer.",
+    },
+    "music_error": {
+        "en": "I can't play this right now (the site refused). Try another song.",
+        "it": "Non riesco a suonarla adesso (il sito ha rifiutato). Prova un'altra canzone.",
+        "fr": "Impossible de la jouer pour l'instant (le site a refusé). Essaie un autre morceau.",
+    },
+    "music_skipped": {"en": "⏭️ Skipped.", "it": "⏭️ Saltata.", "fr": "⏭️ Passé."},
+    "music_stopped": {
+        "en": "⏹️ Music stopped and queue cleared.",
+        "it": "⏹️ Musica fermata e coda svuotata.",
+        "fr": "⏹️ Musique arrêtée et file vidée.",
+    },
+    "music_paused": {"en": "⏸️ Paused.", "it": "⏸️ In pausa.", "fr": "⏸️ En pause."},
+    "music_resumed": {"en": "▶️ Resumed.", "it": "▶️ Riparte.", "fr": "▶️ Reprise."},
+    "music_nothing": {
+        "en": "Nothing is playing.",
+        "it": "Non sta suonando niente.",
+        "fr": "Rien n'est en cours de lecture.",
+    },
+    "music_queue_title": {"en": "🎶 **Queue**", "it": "🎶 **Coda**", "fr": "🎶 **File d'attente**"},
+    "music_next_empty": {
+        "en": "Nothing after this one.",
+        "it": "Dopo questa, niente.",
+        "fr": "Rien après celui-ci.",
+    },
     # --- admin --------------------------------------------------------------------------------
     "admin_gift": {
         "en": "🎁 +{amount} to **{name}**",

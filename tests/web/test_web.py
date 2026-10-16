@@ -147,9 +147,11 @@ class TestState:
             "economy": True,
             "sound": True,
             "soundboard": True,
+            "music": True,
             "roles": False,
             "rob": True,
             "agent": True,
+            "habits": True,
         }
         assert len(data["roles"]) == 12 and data["inVoice"] and data["voiceChannel"] == "Sala"
         assert data["me"]["id"] == str(ANNA) and data["me"]["isAdmin"] is False

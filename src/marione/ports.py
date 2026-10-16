@@ -2,7 +2,7 @@
 be run (and tested) against a fake server."""
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 
 @dataclass(frozen=True)
@@ -36,6 +36,10 @@ class GuildView(Protocol):
         ...
 
     def stop_audio(self) -> bool: ...
+
+    def voice_channel_of(self, user_id: int) -> Any:
+        """The voice channel object the member is in (opaque to the web layer), or None."""
+        ...
 
     def channel_name(self, channel_id: int) -> str | None:
         """'#general', or None if the channel is gone."""

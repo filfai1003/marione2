@@ -12,7 +12,8 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
+from zoneinfo import ZoneInfo
 
 from marione.agent import prompt
 from marione.agent.loop import run_agent
@@ -23,9 +24,11 @@ from marione.agent.sessions import Session, SessionManager
 from marione.agent.tools import ToolContext, ToolRegistry, chat_registry
 from marione.agent.types import ChatMessage, MemberDirectory, Reply, WorldView
 from marione.db.chatlog import ChatLog
+from marione.db.habits import HabitsRepo
 from marione.db.ledger import Ledger
 from marione.db.memory import MemoryRepo
 from marione.db.settings import SettingsRepo
+from marione.domain.habits import describe as describe_habits
 from marione.domain.roles import tier_for
 from marione.domain.rules import AgentRules
 from marione.domain.triggers import strip_speaker_prefix
@@ -98,6 +101,8 @@ class ChatAgent:
         registry: ToolRegistry | None = None,
         chatlog: ChatLog | None = None,
         world: WorldView | None = None,
+        habits: HabitsRepo | None = None,
+        tz: ZoneInfo | None = None,
     ) -> None:
         self._llm = llm
         self._ledger = ledger
@@ -115,6 +120,8 @@ class ChatAgent:
         self._known_names: dict[int, str] = {}
         self._chatlog = chatlog
         self._world = world
+        self._habits = habits
+        self._tz = tz or ZoneInfo("Europe/Rome")
         self._last_trim = 0.0
 
     async def _main_model(self) -> str:
@@ -253,6 +260,7 @@ class ChatAgent:
             now=self._clock.now,
             rules=self._rules,
             economy_enabled=economy_on,
+            profile=self._profile,
             audit={
                 "source": "agent",
                 "channel_id": msg.channel_id,
@@ -317,8 +325,22 @@ class ChatAgent:
             episodes=[e.text for e in episodes],
             tiers=tiers,
             events=await self._events(involved),
+            habits={names[u]: await self._habit_lines(u) for u in involved},
             world=self._world.snapshot(msg.channel_id) if self._world is not None else None,
         )
+
+    async def _habit_lines(self, user_id: int) -> list[str]:
+        if self._habits is None or not await self._settings.is_enabled("habits"):
+            return []
+        now = self._clock.now()
+        return describe_habits(await self._habits.observations(user_id, now), self._tz, now)
+
+    async def _profile(self, user_id: int) -> dict[str, Any]:
+        facts = (await self._memory.facts_for([user_id], per_member=20)).get(user_id, [])
+        return {
+            "notes": [f"{f.category}: {f.text}" for f in facts],
+            "habits": await self._habit_lines(user_id),
+        }
 
     async def _events(self, involved: list[int]) -> list[str]:
         entries = await self._ledger.recent_events(involved, self._cfg.events_in_context)
@@ -407,9 +429,11 @@ class ChatAgent:
             obs.last_profiled = now
 
     async def forget(self, user_id: int) -> int:
-        """A member asks to be forgotten: stored facts and pending observations."""
+        """A member asks to be forgotten: stored facts, habits and pending observations."""
         self._observations.pop(user_id, None)
         count = await self._memory.forget_member(user_id)
+        if self._habits is not None:
+            count += await self._habits.forget_member(user_id)
         for session in self._sessions.all():
             session.window = [m for m in session.window if m.author_id != user_id]
         return count

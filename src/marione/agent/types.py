@@ -37,6 +37,7 @@ class WorldSnapshot:
     channel: str  # "#general"
     topic: str | None = None
     voice: tuple[tuple[str, tuple[str, ...]], ...] = ()  # (voice channel, member names)
+    online: tuple[str, ...] = ()  # "Ada (playing Minecraft)", members online right now
 
 
 class WorldView(Protocol):

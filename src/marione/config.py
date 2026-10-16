@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     web_session_secret: str = ""  # long random string that signs the login cookie
     announce_channel_id: int = 0  # where web actions (a heist) are announced; 0 = system channel
 
+    # Music: YouTube may refuse server addresses. The text of a cookies.txt and/or a proxy help.
+    ytdlp_cookies: str = ""
+    ytdlp_proxy: str = ""
+
     port: int = 8080
     timezone: str = "Europe/Rome"
     migrations_dir: Path = _DEFAULT_MIGRATIONS
