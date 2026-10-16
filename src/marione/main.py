@@ -90,6 +90,7 @@ async def run() -> int:
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%H:%M:%S",
+        stream=sys.stdout,  # Railway marks everything on stderr as an error
     )
     config = load_settings()
     pool = await create_pool(config.database_url)
