@@ -92,10 +92,13 @@ class MemoryRepo:
 
     async def forget_member(self, user_id: int) -> int:
         """Delete everything remembered about a member (their right to be forgotten)."""
-        result = await self._pool.execute(
+        facts = await self._pool.execute(
             "delete from marione.memory_facts where user_id = $1", user_id
         )
-        return int(result.split()[-1])
+        episodes = await self._pool.execute(
+            "delete from marione.episodes where $1 = any(participants)", user_id
+        )
+        return int(facts.split()[-1]) + int(episodes.split()[-1])
 
     # --- episodes and summaries ----------------------------------------------------------
     async def add_episode(self, participants: list[int], text: str) -> None:

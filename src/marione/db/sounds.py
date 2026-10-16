@@ -104,3 +104,10 @@ class SoundsRepo:
             name,
         )
         return Sound(row["name"], row["content_type"], bytes(row["data"])) if row else None
+
+    async def counts(self) -> dict[int, int]:
+        """How many entrance sounds each member has."""
+        rows = await self._pool.fetch(
+            "select user_id, count(*) as n from marione.entrance_sounds group by user_id"
+        )
+        return {r["user_id"]: r["n"] for r in rows}

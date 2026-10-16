@@ -27,7 +27,7 @@ async def protect(
     if request.method not in ("GET", "HEAD", "OPTIONS"):
         origin = request.headers.get("Origin")
         if origin is not None and origin.split("://", 1)[-1] != request.host:
-            return api.fail(403, "forbidden", "Richiesta da un altro sito.")
+            return api.fail(403, "forbidden", "Request from another site.")
     try:
         response = await handler(request)
     except web.HTTPException as exc:  # redirects and 404s still get the headers

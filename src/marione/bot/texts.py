@@ -1,31 +1,45 @@
 """The public lines Marione says about money events: one place, used by Discord and the web."""
 
-from marione.bot.adapters import unit
+from marione.i18n import t, unit
 from marione.services.economy import RobResult
 
 
-def pay_line(sender: str, receiver: str, amount: int) -> str:
-    return f"💸 **{sender}** ha dato **{amount} {unit(amount)}** a **{receiver}**"
+def pay_line(sender: str, receiver: str, amount: int, lang: str | None = None) -> str:
+    return t("pay_public", lang, sender=sender, receiver=receiver, amount=amount, unit=unit(amount))
 
 
-def rob_line(attacker: str, victim: str, result: RobResult) -> str:
+def rob_line(attacker: str, victim: str, result: RobResult, lang: str | None = None) -> str:
     if result.status == "ok":
-        return (
-            f"🥷 **{attacker}** ha svaligiato **{victim}** di "
-            f"**{result.amount} {unit(result.amount)}**!"
+        return t(
+            "rob_ok",
+            lang,
+            attacker=attacker,
+            victim=victim,
+            amount=result.amount,
+            unit=unit(result.amount),
         )
-    return (
-        f"🚨 **{attacker}** ci ha provato con **{victim}** ma l'hanno beccato: "
-        f"multa di **{result.fine} {unit(result.fine)}** a favore di {victim}."
+    return t(
+        "rob_caught",
+        lang,
+        attacker=attacker,
+        victim=victim,
+        fine=result.fine,
+        unit=unit(result.fine),
     )
 
 
-def rob_refusal(result: RobResult, min_amount: int) -> str:
-    wait_min = result.wait_seconds // 60 + 1
-    return {
-        "self": "Derubare te stesso? Marione è fiero della tua creatività, ma no.",
-        "too_small": f"Un furto vale almeno {min_amount} {unit(min_amount)}.",
-        "broke": "Sei al verde: senza Marioncelli non puoi rischiare un furto.",
-        "victim_poor": "La vittima non ha abbastanza Marioncelli.",
-        "cooldown": f"Ti stanno ancora cercando: riprova tra {wait_min} min.",
-    }.get(result.status, "Furto non riuscito.")
+def rob_refusal(result: RobResult, min_amount: int, lang: str | None = None) -> str:
+    keys = {
+        "self": "rob_self",
+        "too_small": "rob_too_small",
+        "broke": "rob_broke",
+        "victim_poor": "rob_victim_poor",
+        "cooldown": "rob_cooldown",
+    }
+    return t(
+        keys.get(result.status, "rob_unavailable"),
+        lang,
+        min=min_amount,
+        unit=unit(min_amount),
+        minutes=result.wait_seconds // 60 + 1,
+    )

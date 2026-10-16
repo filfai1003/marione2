@@ -1,4 +1,5 @@
-// Piccole utilità: DOM builder sicuro (mai innerHTML), formattazione it-IT, validazione file.
+// Small helpers: safe DOM builder (never innerHTML), locale-aware formatting, file checks.
+import { t, locale } from './i18n.js';
 
 const PROPS = new Set(['value', 'checked', 'disabled', 'selected', 'hidden']);
 
@@ -31,6 +32,9 @@ export function append(el, kids) {
   return el;
 }
 
+/** Replaces the children of `el`, skipping null/false (unlike replaceChildren, which prints "null"). */
+export function fill(el, ...kids) { el.replaceChildren(); return append(el, kids); }
+
 /** Ricostruisce il contenuto di `el` solo se la chiave cambia (evita flicker e perdita di focus). */
 export function region(el, key, build) {
   if (el._k === key) return;
@@ -41,28 +45,26 @@ export function region(el, key, build) {
 
 export function fmt(n) {
   const v = Math.round(Number(n) || 0);
-  const s = String(Math.abs(v)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-  return (v < 0 ? '−' : '') + s;
+  return new Intl.NumberFormat(locale()).format(v).replace('-', '−');
 }
 
 export function abbrev(n) {
   const v = Number(n) || 0;
   if (Math.abs(v) <= 99999) return fmt(v);
-  if (Math.abs(v) >= 1e6) return (v / 1e6).toFixed(1).replace('.', ',').replace(',0', '') + 'M';
-  return Math.round(v / 1000) + 'k';
+  return new Intl.NumberFormat(locale(), { notation: 'compact', maximumFractionDigits: 1 }).format(v);
 }
 
 export function ago(iso) {
-  const t = new Date(iso).getTime();
-  if (!t) return '';
-  const s = Math.max(0, (Date.now() - t) / 1000);
-  if (s < 45) return 'adesso';
-  if (s < 3600) return Math.round(s / 60) + ' min fa';
-  if (s < 86400) { const o = Math.round(s / 3600); return o === 1 ? '1 ora fa' : o + ' ore fa'; }
-  const d = Math.floor(s / 86400);
-  if (d === 1) return 'ieri';
-  if (d < 14) return d + ' giorni fa';
-  return new Date(t).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+  const ms = new Date(iso).getTime();
+  if (!ms) return '';
+  const s = (ms - Date.now()) / 1000;
+  const rtf = new Intl.RelativeTimeFormat(locale(), { numeric: 'auto' });
+  const a = Math.abs(s);
+  if (a < 45) return rtf.format(0, 'second');
+  if (a < 3600) return rtf.format(Math.round(s / 60), 'minute');
+  if (a < 86400) return rtf.format(Math.round(s / 3600), 'hour');
+  if (a < 14 * 86400) return rtf.format(Math.round(s / 86400), 'day');
+  return new Date(ms).toLocaleDateString(locale(), { day: 'numeric', month: 'short', year: a > 300 * 86400 ? 'numeric' : undefined });
 }
 
 export function mmss(sec) {
@@ -72,7 +74,7 @@ export function mmss(sec) {
   return hh ? `${hh}:${p(mm)}:${p(ss)}` : `${p(mm)}:${p(ss)}`;
 }
 
-export const fmtDur = (ms) => (ms / 1000).toFixed(1).replace('.', ',') + ' s';
+export const fmtDur = (ms) => (ms ? new Intl.NumberFormat(locale(), { maximumFractionDigits: 1, minimumFractionDigits: 1 }).format(ms / 1000) + ' s' : '—');
 export const fmtKB = (b) => Math.max(1, Math.round(b / 1024)) + ' KB';
 export const fileBase = (n) => n.replace(/\.[^.]+$/, '').slice(0, 40);
 
@@ -80,7 +82,7 @@ export function firstGrapheme(s) {
   s = (s || '').trim();
   if (!s) return '';
   if (window.Intl && Intl.Segmenter) {
-    const it = new Intl.Segmenter('it', { granularity: 'grapheme' }).segment(s)[Symbol.iterator]().next();
+    const it = new Intl.Segmenter(locale(), { granularity: 'grapheme' }).segment(s)[Symbol.iterator]().next();
     return it.value ? it.value.segment : '';
   }
   return Array.from(s)[0];
@@ -96,8 +98,8 @@ export function debounce(fn, ms) {
 export const MAX_BYTES = 8 * 1024 * 1024;
 export function checkAudio(file) {
   const okType = file.type ? file.type.startsWith('audio/') : /\.(mp3|wav|ogg)$/i.test(file.name);
-  if (!okType) return 'Serve un file audio (mp3, wav o ogg).';
-  if (file.size > MAX_BYTES) return 'File troppo grande: massimo 8 MB.';
+  if (!okType) return t('file.notAudio');
+  if (file.size > MAX_BYTES) return t('file.tooBig');
   return null;
 }
 

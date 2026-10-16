@@ -1,7 +1,8 @@
-// Fetch dello stato, polling, gestione errori comune.
+// State fetching, polling and shared error handling.
 import { api, ApiError } from './api.js';
 import { store, set, setRobCooldown } from './store.js';
 import { toast } from './toast.js';
+import { t } from './i18n.js';
 
 export function applyState(s) {
   setRobCooldown(s.rob ? s.rob.cooldownSeconds : 0);
@@ -31,7 +32,7 @@ export function setBalance(b) { if (typeof b === 'number') set({ balance: b }); 
 
 /** Toast dell'errore del server; aggiorna cooldown/stato quando serve. */
 export function handleError(e, overrides = {}) {
-  if (!(e instanceof ApiError)) { toast('Errore inatteso.', 'err'); return; }
+  if (!(e instanceof ApiError)) { toast(t('common.unexpected'), 'err'); return; }
   if (e.code === 'unauthorized') return;
   if (e.code === 'cooldown') setRobCooldown(e.cooldownSeconds);
   if (e.code === 'feature_off') refreshState();

@@ -60,6 +60,11 @@ class DiscordGuildView:
     def stop_audio(self) -> bool:
         return self._voice.stop()
 
+    def channel_name(self, channel_id: int) -> str | None:
+        guild = self._guild()
+        channel = guild.get_channel(channel_id) if guild else None
+        return f"#{channel.name}" if channel is not None else None
+
     async def announce(self, text: str) -> None:
         guild = self._guild()
         if guild is None:

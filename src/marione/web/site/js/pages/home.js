@@ -1,5 +1,6 @@
 import { h, fmt, region } from '../util.js';
 import { store } from '../store.js';
+import { t } from '../i18n.js';
 import { card, cardTitle, pageHead, tierBadge, progress, historyList, notice } from '../ui.js';
 
 export function mount(root) {
@@ -7,50 +8,52 @@ export function mount(root) {
   root.append(R.greet, R.main, R.quick, R.hist);
 
   function balanceCard(s) {
-    const t = s.tier, bal = store.balance;
+    const tier = s.tier, bal = store.balance;
     let prog = null;
-    if (t.next) {
-      const span = Math.max(1, t.next.min - t.min);
-      const missing = Math.max(0, t.next.min - bal);
+    if (tier.next) {
+      const span = Math.max(1, tier.next.min - tier.min);
+      const missing = Math.max(0, tier.next.min - bal);
       prog = h('div', { class: 'tier-prog' },
-        progress(((bal - t.min) / span) * 100, 'Avanzamento verso il prossimo ruolo'),
-        h('p', null, 'Ti mancano ', h('strong', null, fmt(missing) + ' 🪙'), ' per salire di ruolo ',
-          h('span', { class: 'muted' }, '(' + t.next.name + ')')));
+        progress(((bal - tier.min) / span) * 100, t('home.progressAria')),
+        h('p', null, t('home.missing', { amount: fmt(missing) }), ' ', h('span', { class: 'muted' }, '(' + tier.next.name + ')')));
     }
     return card('balance-card',
-      h('span', { class: 'eyebrow' }, 'Il tuo portafoglio'),
+      h('span', { class: 'eyebrow' }, t('home.wallet')),
       h('div', { class: 'bignum' }, h('span', { class: 'coin-big', 'aria-hidden': 'true' }, '🪙'), fmt(bal)),
-      h('div', { class: 'tier-row' }, tierBadge(t)), prog);
+      h('div', { class: 'tier-row' }, tierBadge(tier)), prog);
   }
 
   function rankCard(s) {
     return card('rank-card',
-      h('span', { class: 'eyebrow' }, 'La tua posizione'),
-      h('div', { class: 'bignum rank' }, '#' + s.rank),
-      h('p', null, 'su ' + fmt(s.memberCount) + ' a tavola'),
+      h('span', { class: 'eyebrow' }, t('home.position')),
+      h('div', { class: 'bignum rank' }, s.rank ? '#' + s.rank : '—'),
+      h('p', null, t('home.ofTable', { count: fmt(s.memberCount) })),
+      h('a', { class: 'link', href: '#/economy/leaderboard' }, t('home.seeLeaderboard') + ' →'),
       h('div', { class: 'rank-emoji mar-anim-bob', 'aria-hidden': 'true' }, '🍽️'));
   }
 
   function quick(s) {
     const m = s.modules;
-    const q = (href, emoji, title, sub, cls = '') => h('a', { class: 'quick ' + cls, href }, h('span', { class: 'q-emoji' }, emoji), h('span', null, h('strong', null, title), h('small', null, sub)));
+    const q = (href, emoji, title, sub, cls = '') => h('a', { class: 'quick ' + cls, href },
+      h('span', { class: 'q-emoji', 'aria-hidden': 'true' }, emoji), h('span', null, h('strong', null, title), h('small', null, sub)));
     return h('div', { class: 'grid g-quick' },
-      m.economy ? q('#/economia', '💸', 'Manda Marioncelli', 'Offri un caffè a qualcuno') : null,
-      m.economy && m.rob ? q('#/economia', '🦹', 'Furto', 'Tenta il colpo grosso', 'danger') : null,
-      m.soundboard ? q('#/soundboard', '🔊', 'Soundboard', 'Fai casino in vocale') : null);
+      m.economy ? q('#/economy/send', '💸', t('home.qSend'), t('home.qSendSub')) : null,
+      m.economy && m.rob ? q('#/economy/heist', '🦹', t('home.qRob'), t('home.qRobSub'), 'danger') : null,
+      m.soundboard ? q('#/soundboard', '🔊', t('home.qBoard'), t('home.qBoardSub'), 'green') : null);
   }
 
   function update() {
     const s = store.state;
     if (!s) return;
     const eco = s.modules.economy;
-    region(R.greet, s.me.name, () => pageHead(`Ciao, ${s.me.name} 👋`, 'Si mangia? Ecco come va il tuo conto.'));
-    region(R.main, eco ? JSON.stringify([store.balance, s.tier, s.rank, s.memberCount]) : 'off', () => eco
+    region(R.greet, s.me.name + t('home.hello'), () => pageHead(t('home.hello', { name: s.me.name }), t('home.sub')));
+    region(R.main, eco ? JSON.stringify([store.balance, s.tier, s.rank, s.memberCount, t('home.wallet')]) : 'off', () => eco
       ? [balanceCard(s), rankCard(s)]
-      : notice('🍝', 'Economia in pausa', 'Gli amministratori hanno messo in pausa i Marioncelli. Torna a trovarci presto: intanto puoi usare il resto del locale.'));
-    region(R.quick, JSON.stringify(s.modules), () => quick(s));
-    region(R.hist, eco ? JSON.stringify(s.history.slice(0, 5)) : 'off', () => eco
-      ? card('', cardTitle('📒', 'Ultimi movimenti', h('a', { class: 'link', href: '#/economia' }, 'Vedi tutto')), historyList(s.history.slice(0, 5)))
+      : notice('🍝', t('eco.pausedTitle'), t('eco.pausedText')));
+    region(R.quick, JSON.stringify([s.modules, t('home.qSend')]), () => quick(s));
+    const recent = s.history.slice(0, 5);
+    region(R.hist, eco ? JSON.stringify([recent, t('home.recent')]) : 'off', () => eco
+      ? card('', cardTitle('📒', t('home.recent'), h('a', { class: 'link', href: '#/economy/history' }, t('common.seeAll') + ' →')), historyList(recent))
       : null);
   }
   return { update };

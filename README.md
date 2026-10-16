@@ -10,15 +10,17 @@ OpenRouter. Tutti i dati vivono nel suo database: niente è salvato nei messaggi
 | Economia | Marioncelli per messaggi e minuti in vocale, `/marione paga`, classifica. Il saldo è la somma di un registro che non si modifica mai (vista di controllo sempre vuota). |
 | Ruoli ricchezza | 12 ruoli (da *Morto di fame* a *Divinità Spaghettara*) assegnati in base al saldo. Creati e gestiti solo da Marione. **Spenti di default**: li accende un admin. |
 | Furto | `/marione deruba`: probabilità e multa calcolate in modo che tentare sia sempre in perdita; se ti beccano paghi la multa alla vittima. Un tentativo l'ora, il tempo è nel database. |
-| Soundboard | Libreria di suoni condivisa: si aggiungono dal sito o con `/marione soundboard-aggiungi`, si suonano nella tua vocale. |
+| Soundboard | Libreria di suoni condivisa: tutti aggiungono (sito o `/marione soundboard-add`) e suonano nella propria vocale; solo gli admin eliminano. |
 | Presenza in vocale | Marione entra appena qualcuno entra in vocale e resta finché non rimane solo. |
-| Suoni d'entrata | Quando entri in vocale suona uno dei tuoi audio a caso. |
+| Suoni d'entrata | Quando entri in vocale suona uno dei tuoi audio a caso. Li gestiscono solo gli admin (dal sito o con `/marione-admin entrance-*`). |
 | Chat con l'AI | Risponde se chiamato o quando ha qualcosa da dire (OpenRouter). Vede cosa stai citando, chi è in vocale, il tuo ruolo e i movimenti recenti; ricorda i membri in modo strutturato; la conversazione sopravvive ai riavvii. Può regalare o multare monete con tetti rigidi. |
-| Sito web | Login con Discord: saldo, classifica, pagamenti, furto, soundboard, suoni d'entrata, impostazioni admin e costi dell'AI. |
+| Sito web | Login con Discord, in inglese, italiano o francese. Per tutti: saldo, classifica e movimenti (paginati), pagamenti, furto, soundboard con ricerca e filtri. Solo admin: suoni d'entrata di tutti i membri, "cervello di Marione" (prompt di sistema, appunti e ricordi su ogni membro, chat salvata per canale), funzioni, saldi, scelta del modello AI e costi. |
+| Lingue | Inglese (predefinito), italiano, francese: sito, risposte del bot e nomi dei comandi Discord (tradotti in base alla lingua dell'app Discord). Ognuno sceglie con `/marione language` o dal sito; l'admin sceglie la lingua degli annunci pubblici. |
 
-Comandi: `/marione` (saldo, paga, deruba, classifica, storico, soundboard, soundboard-aggiungi,
-soundboard-rimuovi, suono-aggiungi/lista/rimuovi, dimentica) e `/marione-admin` (regala, multa,
-imposta, annulla, funzione, stato, importa-vecchio).
+Comandi (nomi inglesi, mostrati in italiano/francese a chi ha Discord in quella lingua):
+`/marione` balance, pay, rob, leaderboard, history, soundboard, soundboard-add, language, forget ·
+`/marione-admin` give, fine, set, undo, feature, status, server-language, entrance-add/list/remove,
+soundboard-remove, import-old.
 
 ## Sviluppo
 

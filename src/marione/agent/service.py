@@ -117,6 +117,15 @@ class ChatAgent:
         self._world = world
         self._last_trim = 0.0
 
+    async def _main_model(self) -> str:
+        """The model an admin picked on the web page, else the configured default."""
+        chosen, _ = await self._settings.ai_models()
+        return chosen or self._cfg.model
+
+    async def _gate_model(self) -> str:
+        _, chosen = await self._settings.ai_models()
+        return chosen or self._cfg.gate_model
+
     # --- the message path ------------------------------------------------------------------------
 
     async def handle(self, msg: ChatMessage) -> Reply | None:
@@ -212,7 +221,7 @@ class ChatAgent:
         try:
             response = await self._llm.complete(
                 role="gate",
-                model=self._cfg.gate_model,
+                model=await self._gate_model(),
                 messages=messages,
                 max_tokens=self._cfg.gate_max_tokens,
                 temperature=0,
@@ -254,7 +263,7 @@ class ChatAgent:
         result = await run_agent(
             llm=self._llm,
             role="responder",
-            model=self._cfg.model,
+            model=await self._main_model(),
             fallbacks=self._cfg.fallbacks,
             messages=messages,
             registry=self._registry,
@@ -353,7 +362,7 @@ class ChatAgent:
             current = await self._memory.summary(session.channel_id)
             response = await self._llm.complete(
                 role="compressor",
-                model=self._cfg.gate_model,
+                model=await self._gate_model(),
                 messages=prompt.build_compress(current, [f"{m.author}: {m.text}" for m in old]),
                 max_tokens=self._cfg.summary_max_tokens,
                 temperature=0.3,
@@ -382,7 +391,7 @@ class ChatAgent:
             try:
                 response = await self._llm.complete(
                     role="profiler",
-                    model=self._cfg.gate_model,
+                    model=await self._gate_model(),
                     messages=prompt.build_facts(obs.name, known, obs.lines),
                     max_tokens=self._cfg.facts_max_tokens,
                     temperature=0.2,

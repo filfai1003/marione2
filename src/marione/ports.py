@@ -37,6 +37,10 @@ class GuildView(Protocol):
 
     def stop_audio(self) -> bool: ...
 
+    def channel_name(self, channel_id: int) -> str | None:
+        """'#general', or None if the channel is gone."""
+        ...
+
     async def announce(self, text: str) -> None:
         """Post a public line in the server (a heist result, say)."""
         ...

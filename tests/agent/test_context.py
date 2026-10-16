@@ -47,14 +47,14 @@ class TestRendering:
         ctx = ChatContext(
             balances=[("Anna", 5000)],
             tiers={"Anna": "Sbarca il lunario, #3 of 40"},
-            events=["Anna: Mandati a Bruno (-50)"],
+            events=["Anna: Sent to Bruno (-50)"],
             world=FixedWorld().snapshot(1),
         )
         text = render_context(ctx)
         assert "SERVER NOW" in text and "23:11" in text and "#general" in text
         assert "In voice, Sala: Anna, Bruno" in text
         assert "Anna: 5000 Marioncelli (Sbarca il lunario, #3 of 40)" in text
-        assert "RECENT MONEY EVENTS" in text and "Mandati a Bruno" in text
+        assert "RECENT MONEY EVENTS" in text and "Sent to Bruno" in text
 
     def test_nobody_in_voice(self) -> None:
         assert "Nobody is in a voice channel" in render_context(
@@ -76,7 +76,7 @@ class TestAgentContext:
         text = system_text(llm)
         assert "SERVER NOW" in text and "Sala: Anna, Bruno" in text
         assert "Sbarca il lunario, #1 of 2" in text
-        assert "Mandati a Bruno" in text
+        assert "Sent to Bruno" in text
 
     async def test_the_quoted_message_is_shown(self, pool: Pool, clock: Clock) -> None:
         llm = ScriptedLLM([reply("giusto")])

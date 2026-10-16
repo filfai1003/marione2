@@ -1,8 +1,9 @@
 import { set, store } from './store.js';
+import { t } from './i18n.js';
 
 export class ApiError extends Error {
   constructor(status, body) {
-    super(body.message || 'Qualcosa è andato storto.');
+    super(body.message || t('common.error'));
     this.status = status;
     this.code = body.error || 'error';
     this.cooldownSeconds = body.cooldownSeconds;
@@ -21,7 +22,7 @@ export async function api(path, { method = 'GET', json, form } = {}) {
     });
   } catch {
     if (store.online) set({ online: false });
-    throw new ApiError(0, { error: 'network', message: 'Connessione assente: riprova tra poco.' });
+    throw new ApiError(0, { error: 'network', message: t('common.network') });
   }
   if (!store.online) set({ online: true });
   let body = null;

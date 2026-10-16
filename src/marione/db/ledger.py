@@ -254,3 +254,35 @@ class Ledger:
             limit,
         )
         return [_entry(r) for r in rows]
+
+    async def leaderboard_page(
+        self, query: str, offset: int, limit: int
+    ) -> tuple[int, list[tuple[int, int, str, int]]]:
+        """(total, [(rank, id, name, balance)]). The rank is the real one even when filtering."""
+        rows = await self._pool.fetch(
+            "with ranked as (select b.user_id, m.display_name, b.balance,"
+            " rank() over (order by b.balance desc) as pos from marione.balances b"
+            " join marione.members m using (user_id) where b.balance > 0)"
+            " select *, count(*) over () as total from ranked"
+            " where $1 = '' or display_name ilike '%' || $1 || '%'"
+            " order by pos, user_id offset $2 limit $3",
+            query.strip(),
+            offset,
+            limit,
+        )
+        total = int(rows[0]["total"]) if rows else 0
+        return total, [(r["pos"], r["user_id"], r["display_name"], r["balance"]) for r in rows]
+
+    async def history_page(
+        self, user_id: int, offset: int, limit: int
+    ) -> tuple[int, list[LedgerEntry]]:
+        total = await self._pool.fetchval(
+            "select count(*) from marione.ledger where user_id = $1", user_id
+        )
+        rows = await self._pool.fetch(
+            "select * from marione.ledger where user_id = $1 order by id desc offset $2 limit $3",
+            user_id,
+            offset,
+            limit,
+        )
+        return int(total), [_entry(r) for r in rows]

@@ -1,86 +1,18 @@
 import time
-from collections.abc import AsyncIterator
-from typing import Any
 
 import httpx
 import pytest
-import pytest_asyncio
 import respx
 from aiohttp import FormData
 from aiohttp.test_utils import TestClient, TestServer
 
-from marione.bot.context import Services, build_services
-from marione.config import Settings
-from marione.db.heists import HeistRepo
+from marione.bot.context import build_services
 from marione.db.pool import Pool
 from marione.dev.preview import FakeGuild, member, tone
-from marione.services.economy import EconomyService
 from marione.web import app as web_app
 from marione.web import session
 from marione.web.deps import WebDeps
-
-Client = TestClient[Any, Any]
-ANNA, BRUNO, ADMIN = 1, 2, 3
-
-
-def settings(**kw: str) -> Settings:
-    return Settings(
-        _env_file=None,
-        discord_token="x",
-        guild_id=1,
-        database_url="postgresql://unused",
-        **kw,  # type: ignore[arg-type]
-    )
-
-
-class Harness:
-    def __init__(self, services: Services, guild: FakeGuild, deps: WebDeps) -> None:
-        self.services, self.guild, self.deps = services, guild, deps
-
-
-@pytest_asyncio.fixture
-async def h(pool: Pool) -> Harness:
-    services = build_services(settings(), pool)
-    services.economy = EconomyService(
-        services.ledger, services.economy_rules, HeistRepo(pool), roll=lambda: 0.0
-    )
-    guild = FakeGuild()
-    guild.people = {
-        ANNA: member(ANNA, "Anna", voice="Sala"),
-        BRUNO: member(BRUNO, "Bruno"),
-        ADMIN: member(ADMIN, "Capo", admin=True),
-    }
-    for uid, name in ((ANNA, "Anna"), (BRUNO, "Bruno"), (ADMIN, "Capo")):
-        await services.ledger.remember_name(uid, name)
-    await services.ledger.credit(ANNA, 5000, "admin_adjust")
-    await services.ledger.credit(BRUNO, 3000, "admin_adjust")
-    return Harness(services, guild, WebDeps(services, guild, dev_user_id=ANNA))
-
-
-async def client(h: Harness, user: int | None = ANNA) -> AsyncIterator[Client]:
-    h.deps.dev_user_id = user
-
-    async def ok() -> bool:
-        return True
-
-    server = TestServer(web_app.create_app(h.deps, ok, lambda: True))
-    async with TestClient(server) as c:
-        yield c
-
-
-@pytest_asyncio.fixture
-async def c(h: Harness) -> AsyncIterator[Client]:
-    async for x in client(h):
-        yield x
-
-
-def wav_form(name: str, *, seconds: float = 0.5, field: str = "file", **extra: str) -> FormData:
-    form = FormData()
-    for k, v in extra.items():
-        form.add_field(k, v)
-    form.add_field("name", name)
-    form.add_field(field, tone(440, seconds), filename="x.wav", content_type="audio/wav")
-    return form
+from tests.web.helpers import ADMIN, ANNA, BRUNO, Client, Harness, client, settings, wav_form
 
 
 class TestAuth:
@@ -88,12 +20,19 @@ class TestAuth:
         h.deps.dev_user_id = None
         async for cl in client(h, None):
             assert (await cl.get("/api/me")).status == 200
-            assert (await (await cl.get("/api/me")).json()) == {
+            body = await (
+                await cl.get("/api/me", headers={"Accept-Language": "fr-FR,fr;q=0.9"})
+            ).json()
+            assert body == {
                 "configured": False,
                 "loggedIn": False,
+                "lang": "fr",
+                "languages": ["en", "it", "fr"],
             }
-            r = await cl.get("/api/state")
-            assert r.status == 401 and (await r.json())["error"] == "unauthorized"
+            r = await cl.get("/api/state", headers={"Accept-Language": "it"})
+            body = await r.json()
+            assert r.status == 401 and body["error"] == "unauthorized"
+            assert body["message"] == "Accedi con Discord."
 
     async def test_a_signed_cookie_logs_in_and_a_forged_one_does_not(self, pool: Pool) -> None:
         cfg = settings(
@@ -118,7 +57,7 @@ class TestAuth:
             assert (await r.json())["loggedIn"] is False
             gone = session.dumps({"uid": "999"}, "s3cret")
             r = await cl.get("/api/me", cookies={session.COOKIE_NAME: gone})
-            assert (await r.json()) == {"configured": True, "loggedIn": True, "inGuild": False}
+            assert (await r.json())["inGuild"] is False
             r = await cl.get("/api/state", cookies={session.COOKIE_NAME: gone})
             assert r.status == 403
             await deps.http.aclose()
@@ -202,7 +141,7 @@ class TestState:
         assert data["tier"]["next"] == {"name": "Portafoglio gonfio", "min": 10000, "missing": 5100}
         assert [m["name"] for m in data["members"]] == ["Bruno"]
         assert (
-            data["history"][0]["label"] == "Mandati a Bruno" and data["history"][0]["delta"] == -100
+            data["history"][0]["label"] == "Sent to Bruno" and data["history"][0]["delta"] == -100
         )
         assert data["modules"] == {
             "economy": True,
@@ -223,7 +162,7 @@ class TestEconomy:
         r = await c.post("/api/economy/pay", json={"memberId": str(BRUNO), "amount": 200})
         body = await r.json()
         assert r.status == 200 and body["balance"] == 4800
-        assert body["message"] == "Hai mandato 200 Marioncelli a Bruno."
+        assert body["message"] == "You sent 200 Marioncelli to Bruno."
         assert await h.services.ledger.balance(BRUNO) == 3200
 
     @pytest.mark.parametrize(
@@ -319,8 +258,15 @@ class TestSoundboard:
 
         ren = await c.post("/api/soundboard/rename", json={"id": added["id"], "name": "Bip"})
         assert ren.status == 200
-        assert (await c.post("/api/soundboard/remove", json={"id": added["id"]})).status == 200
-        assert (await c.post("/api/soundboard/remove", json={"id": added["id"]})).status == 404
+        # Only administrators delete, even the creator cannot.
+        assert (await c.post("/api/soundboard/remove", json={"id": added["id"]})).status == 403
+        async for admin in client(h, ADMIN):
+            assert (
+                await admin.post("/api/soundboard/remove", json={"id": added["id"]})
+            ).status == 200
+            assert (
+                await admin.post("/api/soundboard/remove", json={"id": added["id"]})
+            ).status == 404
 
     async def test_errors(self, c: Client, h: Harness) -> None:
         assert (await c.post("/api/soundboard/add", data=wav_form("A"))).status == 200
@@ -355,20 +301,46 @@ class TestSoundboard:
 
 
 class TestEntrance:
-    async def test_add_list_audio_remove_and_limit(self, c: Client) -> None:
-        assert (await c.post("/api/entrance/add", data=wav_form("Squillo"))).status == 200
-        listing = await (await c.get("/api/entrance/list")).json()
-        assert listing["limit"] == 10 and listing["entrances"][0]["name"] == "Squillo"
-        assert (await c.get("/api/entrance/audio?name=Squillo")).status == 200
-        assert (await c.get("/api/entrance/audio?name=Nope")).status == 404
-        dup = await c.post("/api/entrance/add", data=wav_form("Squillo"))
-        assert dup.status == 409 and (await dup.json())["error"] == "exists"
-        assert (await c.post("/api/entrance/remove", json={"name": "Squillo"})).status == 200
-        assert (await c.post("/api/entrance/remove", json={"name": "Squillo"})).status == 404
+    async def test_non_admins_cannot_see_or_change_entrances(self, c: Client) -> None:
+        for r in (
+            await c.get("/api/entrance/members"),
+            await c.get(f"/api/entrance/list?memberId={ANNA}"),
+            await c.post("/api/entrance/add", data=wav_form("X", memberId=str(ANNA))),
+            await c.post("/api/entrance/remove", json={"memberId": str(ANNA), "name": "X"}),
+        ):
+            assert r.status == 403
+        assert "entrances" not in await (await c.get("/api/state")).json()
 
-    async def test_over_fifteen_seconds_is_refused(self, c: Client) -> None:
-        r = await c.post("/api/entrance/add", data=wav_form("Lungo", seconds=16))
-        assert r.status == 422
+    async def test_an_admin_manages_anyones_entrances(self, h: Harness) -> None:
+        async for admin in client(h, ADMIN):
+            r = await admin.post("/api/entrance/add", data=wav_form("Squillo", memberId=str(BRUNO)))
+            assert r.status == 200
+            members = await (await admin.get("/api/entrance/members")).json()
+            assert members["members"][0] == {
+                "id": str(BRUNO),
+                "name": "Bruno",
+                "avatar": None,
+                "count": 1,
+            }
+            listing = await (await admin.get(f"/api/entrance/list?memberId={BRUNO}")).json()
+            assert listing["limit"] == 10 and listing["entrances"][0]["name"] == "Squillo"
+            assert (
+                await admin.get(f"/api/entrance/audio?memberId={BRUNO}&name=Squillo")
+            ).status == 200
+            assert (await admin.get(f"/api/entrance/audio?memberId={BRUNO}&name=No")).status == 404
+            dup = await admin.post(
+                "/api/entrance/add", data=wav_form("Squillo", memberId=str(BRUNO))
+            )
+            assert dup.status == 409 and (await dup.json())["error"] == "exists"
+            long = await admin.post(
+                "/api/entrance/add", data=wav_form("Lungo", seconds=16, memberId=str(BRUNO))
+            )
+            assert long.status == 422
+            nobody = await admin.post("/api/entrance/add", data=wav_form("X", memberId="999"))
+            assert nobody.status == 404
+            gone = {"memberId": str(BRUNO), "name": "Squillo"}
+            assert (await admin.post("/api/entrance/remove", json=gone)).status == 200
+            assert (await admin.post("/api/entrance/remove", json=gone)).status == 404
 
 
 class TestAdmin:

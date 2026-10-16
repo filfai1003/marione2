@@ -6,6 +6,7 @@ import discord
 from discord.ext import commands
 
 from marione.agent.service import ChatAgent
+from marione.bot.commands_i18n import Translator
 from marione.bot.context import Services
 from marione.bot.voice import VoicePlayer, load_opus
 
@@ -35,6 +36,7 @@ class MarioneBot(commands.Bot):
 
     async def setup_hook(self) -> None:
         load_opus()
+        await self.tree.set_translator(Translator())
         for extension in EXTENSIONS:
             await self.load_extension(extension)
         guild = discord.Object(id=self.guild_id)

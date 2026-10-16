@@ -202,15 +202,15 @@ async def test_every_cog_loads_with_real_services_and_no_discord_connection(
         marione = next(c for c in bot.tree.get_commands() if c.name == "marione")
         assert isinstance(marione, discord.app_commands.Group)
         assert {
-            "saldo",
-            "paga",
-            "deruba",
-            "classifica",
-            "storico",
-            "suono-aggiungi",
+            "balance",
+            "pay",
+            "rob",
+            "leaderboard",
+            "history",
             "soundboard",
-            "soundboard-aggiungi",
-            "dimentica",
+            "soundboard-add",
+            "language",
+            "forget",
         } <= {c.name for c in marione.commands}
     finally:
         for name in list(bot.cogs):

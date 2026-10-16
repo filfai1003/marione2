@@ -18,6 +18,7 @@ from pathlib import Path
 
 from marione.bot.context import Services, build_services
 from marione.config import Settings
+from marione.db.memory import Fact
 from marione.db.pool import Pool, create_pool, migrate
 from marione.ports import GuildMember, PlayOutcome
 from marione.web import app as web_app
@@ -54,6 +55,7 @@ class FakeGuild:
     played: list[tuple[int, int, int]] = field(default_factory=list)  # (user, bytes, volume)
     announced: list[str] = field(default_factory=list)
     stopped: int = 0
+    channels: dict[int, str] = field(default_factory=lambda: {10: "#general", 11: "#memes"})
 
     def member(self, user_id: int) -> GuildMember | None:
         return self.people.get(user_id)
@@ -71,6 +73,9 @@ class FakeGuild:
     def stop_audio(self) -> bool:
         self.stopped += 1
         return True
+
+    def channel_name(self, channel_id: int) -> str | None:
+        return self.channels.get(channel_id)
 
     async def announce(self, text: str) -> None:
         self.announced.append(text)
@@ -123,6 +128,42 @@ async def seed(services: Services, guild: FakeGuild) -> None:
     await services.soundboard.toggle_favorite(ME, 3)
     for name, freq in (("Squillo di tromba", 523), ("Mamma mia!", 349), ("Ta-daaa", 880)):
         await services.sound_service.add_entrance(ME, name, tone(freq, 0.8))
+    await services.sound_service.add_entrance(ME + 1, "Clacson", tone(300, 0.6))
+    # What the AI would have learnt, so the admin "brain" page has something to show.
+    memory, log = services.memory, services.chatlog
+    for uid, facts in (
+        (
+            ME + 1,
+            [
+                ("likes", "pasta al forno la domenica", 5),
+                ("humor", "battute pessime sul calcio", 3),
+            ],
+        ),
+        (
+            ME + 2,
+            [
+                ("identity", "nonna del server, fa i biscotti", 4),
+                ("relationship", "chiama Marione 'tesoro'", 4),
+            ],
+        ),
+        (ME, [("likes", "la soundboard, soprattutto Applausi", 3)]),
+    ):
+        for category, text, confidence in facts:
+            await memory.add_fact(uid, Fact(category, text, confidence))
+    await memory.add_episode(
+        [ME + 1, ME + 2], "Marcello e Nonna Pina hanno litigato sulla carbonara con la panna."
+    )
+    await memory.set_summary(
+        10, "Si discute se la pizza con l'ananas sia un crimine. Marione dice di sì."
+    )
+    lines = [
+        (ME + 1, "Marcello", "marione la pizza con l'ananas?"),
+        (0, "Marione", "reato contro l'umanità, prossima domanda"),
+        (ME + 2, "Nonna Pina", "ai miei tempi l'ananas si mangiava a natale"),
+        (ME, "Giulia", "ahahah"),
+    ]
+    for i, (uid, name, text) in enumerate(lines):
+        await log.append(10, 500 + i, uid, name, text, is_bot=uid == 0)
 
 
 async def serve(pool: Pool, port: int) -> None:

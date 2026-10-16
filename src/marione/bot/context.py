@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 from marione.config import Settings
 from marione.db.chatlog import ChatLog
 from marione.db.heists import HeistRepo
+from marione.db.insight import InsightRepo
 from marione.db.ledger import Ledger
 from marione.db.memory import MemoryRepo
 from marione.db.pool import Pool
@@ -31,6 +32,7 @@ class Services:
     soundboard: SoundboardRepo
     roles: RolesRepo
     chatlog: ChatLog
+    insight: InsightRepo
     memory: MemoryRepo
     usage: UsageRepo
     economy: EconomyService
@@ -68,6 +70,7 @@ def build_services(config: Settings, pool: Pool) -> Services:
         soundboard=soundboard,
         roles=RolesRepo(pool),
         chatlog=ChatLog(pool),
+        insight=InsightRepo(pool),
         memory=MemoryRepo(pool),
         usage=usage,
         economy=EconomyService(ledger, rules, HeistRepo(pool)),
