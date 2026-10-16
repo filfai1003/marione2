@@ -1,11 +1,12 @@
-"""Voice: libopus loading, the audio source for a sound, and the single player the bot uses."""
+"""Voice: libopus loading, the music source, and the single player the bot uses."""
 
 import asyncio
+import contextlib
 import ctypes.util
-import io
 import logging
 import shlex
 import shutil
+import time
 from collections.abc import Awaitable, Callable
 from enum import Enum
 from typing import Any, cast
@@ -13,6 +14,7 @@ from typing import Any, cast
 import discord
 
 from marione.bot.mixer import Mixer
+from marione.bot.pcm import DecodeError, PcmCache, PcmSource, Prefetch, decode
 from marione.domain.presence import choose_channel
 
 logger = logging.getLogger("marione.voice")
@@ -41,18 +43,6 @@ def ffmpeg_path() -> str:
     return shutil.which("ffmpeg") or "ffmpeg"
 
 
-def audio_source(data: bytes, volume: float = 1.0) -> Any:
-    """The sound's bytes as an audio source, loudness-normalised so no sound is much louder,
-    then scaled by the soundboard volume (0.0-1.0)."""
-    raw = discord.FFmpegPCMAudio(
-        io.BytesIO(data),
-        executable=ffmpeg_path(),
-        pipe=True,
-        options="-vn -af loudnorm=I=-16:TP=-1.5:LRA=11",
-    )
-    return discord.PCMVolumeTransformer(raw, volume=max(0.0, min(1.0, volume)))
-
-
 def music_source(url: str, headers: dict[str, str], volume: float) -> Any:
     """A remote audio stream (resolved by yt-dlp) for the music layer; FFmpeg reconnects if the
     connection drops mid-song."""
@@ -62,7 +52,11 @@ def music_source(url: str, headers: dict[str, str], volume: float) -> Any:
     raw = discord.FFmpegPCMAudio(
         url, executable=ffmpeg_path(), before_options=before, options="-vn"
     )
-    return discord.PCMVolumeTransformer(raw, volume=max(0.0, min(1.0, volume)))
+    return Prefetch(discord.PCMVolumeTransformer(raw, volume=max(0.0, min(1.0, volume))))
+
+
+CONNECT_TIMEOUT = 10.0
+DROP_TIMEOUT = 5.0
 
 
 class PlayStatus(Enum):
@@ -74,15 +68,37 @@ class PlayStatus(Enum):
 class VoicePlayer:
     """The bot's single voice connection. It joins as soon as somebody enters a voice channel and
     stays until it is left alone (see `domain.presence`). Music and short sounds share one
-    `Mixer`, so a soundboard sound plays on top of the music instead of cutting it off."""
+    `Mixer`, so a soundboard sound plays on top of the music instead of cutting it off.
 
-    def __init__(self, guild_getter: Callable[[], discord.Guild | None]) -> None:
+    A voice connection can break without discord.py noticing (another instance of the bot took
+    the session over during a deploy, a network blip): a move then "succeeds" but the bot never
+    arrives. Every operation therefore checks the connection it got, and a broken one is dropped
+    and made again from scratch instead of being waited on."""
+
+    def __init__(
+        self,
+        guild_getter: Callable[[], discord.Guild | None],
+        *,
+        cache: PcmCache | None = None,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
         self._guild = guild_getter
         self._lock = asyncio.Lock()
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._clock = clock
+        self._hold_until = 0.0
+        self.cache = cache if cache is not None else PcmCache(lambda d: decode(d, ffmpeg_path()))
         self.mixer = Mixer(self._music_ended)
         self.on_music_end: Callable[[], Awaitable[None]] | None = None
         self.on_leave: Callable[[], None] | None = None
+
+    def hold(self, seconds: float) -> None:
+        """Stay out of voice for a while (at start-up, until the previous deploy has left)."""
+        self._hold_until = self._clock() + seconds
+
+    @property
+    def held(self) -> bool:
+        return self._clock() < self._hold_until
 
     def _music_ended(self) -> None:  # called from the audio thread
         loop, hook = self._loop, self.on_music_end
@@ -112,53 +128,96 @@ class VoicePlayer:
         ):
             client.play(self.mixer)
 
+    # --- the connection ----------------------------------------------------------------------
+
+    async def _drop(self, client: discord.VoiceClient) -> None:
+        """Forget a broken connection completely, on our side and on Discord's."""
+        logger.warning("voice connection is broken: starting it again")
+        try:
+            await asyncio.wait_for(client.disconnect(force=True), DROP_TIMEOUT)
+        except (discord.DiscordException, OSError, TimeoutError):
+            client.cleanup()
+        guild = self._guild()
+        if guild is not None:
+            with contextlib.suppress(discord.DiscordException, OSError, TimeoutError):
+                await asyncio.wait_for(guild.change_voice_state(channel=None), DROP_TIMEOUT)
+
+    async def _current(self) -> discord.VoiceClient | None:
+        """The connection, if it really works; a broken one is dropped."""
+        client = self.client()
+        if client is not None and not client.is_connected():
+            await self._drop(client)
+            return None
+        return client
+
+    async def _connect(
+        self, channel: discord.VoiceChannel | discord.StageChannel
+    ) -> discord.VoiceClient:
+        stale = self.client()
+        if stale is not None:
+            await self._drop(stale)
+        return await channel.connect(timeout=CONNECT_TIMEOUT, reconnect=True, self_deaf=True)
+
+    async def _move(
+        self, client: discord.VoiceClient, channel: discord.VoiceChannel | discord.StageChannel
+    ) -> discord.VoiceClient:
+        await client.move_to(channel, timeout=CONNECT_TIMEOUT)
+        if client.is_connected() and getattr(client.channel, "id", None) == channel.id:
+            return client
+        # discord.py only logs a move that timed out: the bot is stuck, start over.
+        return await self._connect(channel)
+
     async def settle(self, joined: discord.abc.Snowflake | None = None) -> None:
         """Move to where the people are, or leave if nobody is left."""
         guild = self._guild()
-        if guild is None:
+        if guild is None or self.held:
             return
         self._loop = asyncio.get_running_loop()
         async with self._lock:
-            client = self.client()
-            channels = {
-                c.id: self._humans(c) for c in (*guild.voice_channels, *guild.stage_channels)
-            }
-            current = client.channel.id if client is not None else None
-            target = choose_channel(current, channels, joined.id if joined else None)
             try:
+                client = await self._current()
+                channels = {
+                    c.id: self._humans(c) for c in (*guild.voice_channels, *guild.stage_channels)
+                }
+                current = client.channel.id if client is not None else None
+                target = choose_channel(current, channels, joined.id if joined else None)
                 if target is None:
                     if client is not None:
                         self.mixer.close()
                         if self.on_leave is not None:
                             self.on_leave()
-                        await client.disconnect(force=False)
+                        await asyncio.wait_for(client.disconnect(force=False), DROP_TIMEOUT)
                     return
                 channel = guild.get_channel(target)
                 if not isinstance(channel, discord.VoiceChannel | discord.StageChannel):
                     return
                 if client is None:
-                    await channel.connect()
+                    await self._connect(channel)
                 elif target != current:
-                    await client.move_to(channel)
-            except (discord.ClientException, discord.HTTPException, TimeoutError) as exc:
-                logger.warning("could not join the voice channel: %s", exc)
+                    await self._move(client, channel)
+                self.kick()
+            except (discord.DiscordException, OSError, TimeoutError) as exc:
+                logger.warning("could not join the voice channel: %r", exc)
 
     async def _reach(
         self, channel: discord.VoiceChannel | discord.StageChannel, *, move: bool
     ) -> discord.VoiceClient | PlayStatus:
         """Be connected in `channel`. Without `move` the bot never leaves another channel; with
         it, it still will not walk away from people who are listening to music."""
-        client = self.client()
+        if self.held:
+            return PlayStatus.ERROR
+        client = await self._current()
         if client is None:
-            return await channel.connect()
-        if client.channel == channel:
+            return await self._connect(channel)
+        if getattr(client.channel, "id", None) == channel.id:
             return client
         if not move:
             return PlayStatus.BUSY
         if self.mixer.has_music and self._humans(client.channel) > 0:
             return PlayStatus.BUSY
-        await client.move_to(channel)
-        return client
+        return await self._move(client, channel)
+
+    # --- playing -----------------------------------------------------------------------------
 
     async def play(
         self,
@@ -170,15 +229,22 @@ class VoicePlayer:
     ) -> PlayStatus:
         """A short sound, on top of whatever is playing."""
         self._loop = asyncio.get_running_loop()
+        try:
+            pcm = await self.cache.get(data)  # outside the lock: decoding never delays others
+        except DecodeError as exc:
+            logger.warning("could not decode a sound: %s", exc)
+            return PlayStatus.ERROR
         async with self._lock:
             try:
                 reached = await self._reach(channel, move=move)
                 if isinstance(reached, PlayStatus):
                     return reached
-                self.mixer.add_effect(audio_source(data, volume))
+                if not reached.is_connected():
+                    return PlayStatus.ERROR
+                self.mixer.add_effect(PcmSource(pcm, volume))
                 self.kick()
-            except (discord.ClientException, discord.HTTPException, TimeoutError) as exc:
-                logger.warning("could not play a sound: %s", exc)
+            except (discord.DiscordException, OSError, TimeoutError) as exc:
+                logger.warning("could not play a sound: %r", exc)
                 return PlayStatus.ERROR
         return PlayStatus.OK
 
@@ -190,13 +256,14 @@ class VoicePlayer:
         async with self._lock:
             try:
                 reached = await self._reach(channel, move=True)
-                if isinstance(reached, PlayStatus):
+                if isinstance(reached, PlayStatus) or not reached.is_connected():
                     source.cleanup()
-                    return reached
+                    return reached if isinstance(reached, PlayStatus) else PlayStatus.ERROR
                 self.mixer.set_music(source)
                 self.kick()
-            except (discord.ClientException, discord.HTTPException, TimeoutError) as exc:
-                logger.warning("could not play music: %s", exc)
+            except (discord.DiscordException, OSError, TimeoutError) as exc:
+                source.cleanup()
+                logger.warning("could not play music: %r", exc)
                 return PlayStatus.ERROR
         return PlayStatus.OK
 

@@ -52,9 +52,10 @@ class EntranceCog(commands.Cog):
         # An entrance never cuts off a sound and never pulls the bot away from other people.
         await self.bot.voice.play(after.channel, sound.data, volume=volume, move=False)
 
-    @tasks.loop(seconds=60)
+    @tasks.loop(seconds=20)
     async def reaper(self) -> None:
-        """A safety net for missed events (and the start): be where the people are."""
+        """A safety net for missed events, the start and broken connections: be where the people
+        are, with a connection that works."""
         await self.bot.voice.settle()
 
     @reaper.before_loop

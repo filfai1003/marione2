@@ -1,7 +1,9 @@
 """Start-up: configuration, database, migrations, web server, then the bot (with restarts)."""
 
 import asyncio
+import contextlib
 import logging
+import signal
 import sys
 from dataclasses import dataclass
 
@@ -54,6 +56,7 @@ async def run_bot(services: Services) -> int:
         return current.get_guild(services.config.guild_id) if current else None
 
     voice = VoicePlayer(guild)
+    voice.hold(services.config.voice_start_delay)
     music = MusicPlayer(
         voice, services.ytdl, services.music, services.settings, source_factory=music_source
     )
@@ -70,9 +73,25 @@ async def run_bot(services: Services) -> int:
         ),
         services.config.port,
     )
+    # Railway stops a container with SIGTERM: leave voice cleanly so the new deploy finds the
+    # connection free instead of fighting the old one for it.
+    stopping = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    closing: set[asyncio.Task[None]] = set()
+
+    def terminate() -> None:
+        stopping.set()
+        if current is not None:
+            task = loop.create_task(current.close())
+            closing.add(task)
+            task.add_done_callback(closing.discard)
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        with contextlib.suppress(NotImplementedError, RuntimeError):
+            loop.add_signal_handler(sig, terminate)
     presences = True
     try:
-        while True:
+        while not stopping.is_set():
             current = MarioneBot(services, voice, music, presences=presences)
             try:
                 async with current:
@@ -89,13 +108,17 @@ async def run_bot(services: Services) -> int:
                     "online status and games. Enable it to let Marione learn members' habits."
                 )
             except (discord.DiscordException, OSError, TimeoutError) as exc:
+                if stopping.is_set():
+                    return 0
                 policy = restart_policy(exc)
                 logger.error("The bot stopped: %r", exc)
                 if not policy.retry:
                     logger.error("Not retrying: fix the token or the intents and redeploy.")
                     return 1
                 logger.info("Restarting in %.0f seconds.", policy.delay)
-                await asyncio.sleep(policy.delay)
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(stopping.wait(), policy.delay)
+        return 0
     finally:
         await runner.cleanup()
         await deps.http.aclose()

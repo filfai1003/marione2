@@ -1,5 +1,6 @@
 """Configuration read from the environment. Nothing runs at import time: call `load_settings()`."""
 
+import os
 from pathlib import Path
 
 from pydantic import Field
@@ -34,6 +35,12 @@ class Settings(BaseSettings):
     # Music: YouTube may refuse server addresses. The text of a cookies.txt and/or a proxy help.
     ytdlp_cookies: str = ""
     ytdlp_proxy: str = ""
+
+    # During a deploy the old container is still in voice for a few seconds: two sessions of the
+    # same bot fight over the connection and break it. The new one waits this long before joining.
+    voice_start_delay: float = Field(
+        default_factory=lambda: 25.0 if os.environ.get("RAILWAY_DEPLOYMENT_ID") else 0.0, ge=0
+    )
 
     port: int = 8080
     timezone: str = "Europe/Rome"
