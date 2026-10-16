@@ -14,14 +14,33 @@ class ChatMessage:
     message_id: int
     is_bot: bool = False
     addressed: bool = False  # mentions the bot, replies to it, or names it
-    reply_to_id: int | None = None
+    reply_to_id: int | None = None  # author of the message this one answers
     mentioned_ids: tuple[int, ...] = ()
+    reply_to_message_id: int | None = None
+    reply_text: str | None = None  # what that message said (the model must see what is answered)
+    reply_author: str | None = None
+    attachments: tuple[str, ...] = ()  # e.g. "image: foto.png": the model cannot see them
+    channel_name: str = ""
 
 
 @dataclass(frozen=True)
 class MemberRef:
     id: int
     name: str
+
+
+@dataclass(frozen=True)
+class WorldSnapshot:
+    """What is going on in the server right now, as plain text the prompt can show."""
+
+    local_time: str  # "venerdì 16 ottobre 2026, 23:11"
+    channel: str  # "#general"
+    topic: str | None = None
+    voice: tuple[tuple[str, tuple[str, ...]], ...] = ()  # (voice channel, member names)
+
+
+class WorldView(Protocol):
+    def snapshot(self, channel_id: int) -> WorldSnapshot: ...
 
 
 class MemberDirectory(Protocol):

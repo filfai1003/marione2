@@ -1,15 +1,11 @@
 from marione.db.ledger import Ledger
 from marione.db.pool import Pool
-from marione.domain.afk import VoiceFlags
 from marione.domain.limits import PlayLimiter
 from marione.domain.rules import EconomyRules
 from marione.domain.spam import Verdict
-from marione.services.afk import AfkTracker
 from marione.services.economy import EconomyService
 
 RULES = EconomyRules()
-AWAY = VoiceFlags(self_deaf=True)
-HERE = VoiceFlags()
 
 
 class TestEconomyService:
@@ -60,60 +56,67 @@ class TestEconomyService:
         await eco.voice_tick([1], minute=501)
         assert await ledger.balance(1) == 4
 
-    async def test_afk_charges_never_go_below_zero(self, pool: Pool) -> None:
-        ledger = Ledger(pool)
-        await ledger.credit(1, 20, "admin_adjust")
-        eco = EconomyService(ledger, RULES)
-        assert await eco.afk_fine(1, key="afk:1:a") == 15
-        assert await eco.afk_drain(1, 10, key="afk:1:b") == 5
-        assert await ledger.balance(1) == 0
-
-
-class TestAfkTracker:
-    def test_member_becomes_due_only_after_the_idle_time(self) -> None:
-        t = AfkTracker(RULES)
-        t.observe(1, AWAY, now=0)
-        assert t.due(299) == []
-        assert t.due(300) == [1]
-
-    def test_coming_back_resets_the_idle_clock(self) -> None:
-        t = AfkTracker(RULES)
-        t.observe(1, AWAY, now=0)
-        t.observe(1, HERE, now=100)
-        t.observe(1, AWAY, now=200)
-        assert t.due(450) == []  # idle since 200, not since 0
-        assert t.due(500) == [1]
-
-    def test_staying_away_does_not_restart_the_clock(self) -> None:
-        t = AfkTracker(RULES)
-        t.observe(1, AWAY, now=0)
-        t.observe(1, AWAY, now=250)
-        assert t.due(300) == [1]
-
-    def test_drain_charges_each_whole_minute_exactly_once(self) -> None:
-        t = AfkTracker(RULES)
-        t.enter_bed(1, now=0)
-        assert t.drain_due(59) == []
-        assert t.drain_due(125) == [(1, 2)]
-        assert t.drain_due(125) == []
-        assert t.drain_due(185) == [(1, 1)]
-
-    def test_leaving_forgets_the_member(self) -> None:
-        t = AfkTracker(RULES)
-        t.enter_bed(1, now=0)
-        t.leave(1)
-        assert not t.in_bed(1) and t.drain_due(1000) == []
-
-    def test_a_member_in_bed_is_not_due_again(self) -> None:
-        t = AfkTracker(RULES)
-        t.observe(1, AWAY, now=0)
-        t.enter_bed(1, now=300)
-        t.observe(1, AWAY, now=301)
-        assert t.due(1000) == []
-
 
 def test_play_limiter_is_a_sliding_window() -> None:
     lim = PlayLimiter(3, 600)
     assert [lim.allow(1, t) for t in (0, 10, 20, 30)] == [True, True, True, False]
     assert lim.allow(2, 30)  # another member is independent
     assert lim.allow(1, 601)  # the oldest plays have left the window
+
+
+class TestRobbery:
+    @staticmethod
+    def build(pool: Pool, roll: float) -> tuple[Ledger, EconomyService]:
+        from marione.db.heists import HeistRepo
+
+        ledger = Ledger(pool)
+        return ledger, EconomyService(ledger, RULES, HeistRepo(pool), roll=lambda: roll)
+
+    async def test_a_lucky_roll_steals_and_an_unlucky_one_pays_the_victim(self, pool: Pool) -> None:
+        ledger, lucky = self.build(pool, 0.0)
+        await ledger.credit(1, 1000, "admin_adjust")
+        await ledger.credit(2, 1000, "admin_adjust")
+        won = await lucky.rob(1, 2, 100)
+        assert (won.status, won.amount) == ("ok", 100)
+        assert await ledger.balance(1) == 1100 and await ledger.balance(2) == 900
+
+        await ledger.credit(3, 1000, "admin_adjust")
+        _, unlucky = self.build(pool, 0.999)
+        lost = await unlucky.rob(3, 2, 100)
+        assert lost.status == "caught" and lost.fine > 0
+        assert await ledger.balance(3) == 1000 - lost.fine
+        assert await ledger.balance(2) == 900 + lost.fine
+        assert await ledger.audit() == []
+
+    async def test_refusals_cost_nothing(self, pool: Pool) -> None:
+        ledger, eco = self.build(pool, 0.0)
+        await ledger.credit(1, 100, "admin_adjust")
+        await ledger.credit(2, 50, "admin_adjust")
+        assert (await eco.rob(1, 1, 10)).status == "self"
+        assert (await eco.rob(1, 2, 0)).status == "too_small"
+        assert (await eco.rob(9, 2, 10)).status == "broke"
+        assert (await eco.rob(1, 2, 51)).status == "victim_poor"
+        assert await eco.rob_cooldown(1) == 0  # none of those spent the attempt
+
+    async def test_cooldown_after_an_attempt(self, pool: Pool) -> None:
+        ledger, eco = self.build(pool, 0.0)
+        await ledger.credit(1, 100, "admin_adjust")
+        await ledger.credit(2, 100, "admin_adjust")
+        assert (await eco.rob(1, 2, 10)).status == "ok"
+        again = await eco.rob(1, 2, 10)
+        assert again.status == "cooldown" and again.refused and again.wait_seconds > 3000
+
+    async def test_preview_matches_what_the_roll_uses(self, pool: Pool) -> None:
+        ledger, eco = self.build(pool, 0.0)
+        await ledger.credit(1, 500, "admin_adjust")
+        await ledger.credit(2, 500, "admin_adjust")
+        o = await eco.rob_preview(1, 2, 100)
+        assert 0 < o.probability <= RULES.robbery.p_max and o.fine > 0
+
+    async def test_pay_is_all_or_nothing_and_idempotent(self, pool: Pool) -> None:
+        ledger, eco = self.build(pool, 0.5)
+        await ledger.credit(1, 100, "admin_adjust")
+        assert await eco.pay(1, 2, 60, key="k") is True
+        assert await eco.pay(1, 2, 60, key="k") is True  # the retry returns the first result
+        assert await ledger.balance(1) == 40
+        assert await eco.pay(1, 2, 60, key="k2") is False

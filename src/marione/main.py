@@ -1,4 +1,4 @@
-"""Start-up: configuration, database, migrations, health check, then the bot (with restarts)."""
+"""Start-up: configuration, database, migrations, web server, then the bot (with restarts)."""
 
 import asyncio
 import logging
@@ -8,11 +8,14 @@ from dataclasses import dataclass
 import asyncpg
 import discord
 
-from marione import health
 from marione.bot.app import MarioneBot
 from marione.bot.context import Services, build_services
+from marione.bot.guildview import DiscordGuildView
+from marione.bot.voice import VoicePlayer
 from marione.config import load_settings
 from marione.db.pool import Pool, create_pool, migrate
+from marione.web import app as web_app
+from marione.web.deps import WebDeps
 
 logger = logging.getLogger("marione")
 
@@ -45,8 +48,18 @@ async def _database_ok(pool: Pool) -> bool:
 async def run_bot(services: Services) -> int:
     """Run the bot until it stops for good. Returns the process exit code."""
     current: MarioneBot | None = None
-    runner = await health.start(
-        health.create_app(
+
+    def guild() -> discord.Guild | None:
+        return current.get_guild(services.config.guild_id) if current else None
+
+    voice = VoicePlayer(guild)
+    deps = WebDeps(
+        services,
+        DiscordGuildView(guild, voice, services.config.announce_channel_id),
+    )
+    runner = await web_app.start(
+        web_app.create_app(
+            deps,
             lambda: _database_ok(services.pool),
             lambda: current is not None and current.is_ready(),
         ),
@@ -54,7 +67,7 @@ async def run_bot(services: Services) -> int:
     )
     try:
         while True:
-            current = MarioneBot(services)
+            current = MarioneBot(services, voice)
             try:
                 async with current:
                     await current.start(services.config.discord_token)
@@ -69,6 +82,7 @@ async def run_bot(services: Services) -> int:
                 await asyncio.sleep(policy.delay)
     finally:
         await runner.cleanup()
+        await deps.http.aclose()
 
 
 async def run() -> int:

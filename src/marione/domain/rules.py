@@ -1,6 +1,8 @@
 """Tunable numbers of the economy and of the AI's economic powers, in one place."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from marione.domain.robbery import RobberyRules
 
 
 @dataclass(frozen=True)
@@ -11,10 +13,6 @@ class EconomyRules:
     message_cooldown_seconds: float = 20
     # Earning by being active in a voice channel.
     voice_per_minute: int = 2
-    # Auto-AFK: moved to the bed after being idle, then charged.
-    afk_idle_seconds: int = 300
-    afk_fine: int = 15
-    afk_drain_per_minute: int = 1
     # Anti-spam: a flood or a repeat costs a percentage of the spammer's fortune.
     spam_window_seconds: float = 8
     spam_max_burst: int = 6
@@ -22,6 +20,9 @@ class EconomyRules:
     spam_penalty_pct: int = 10
     spam_penalty_min: int = 50
     spam_penalty_cooldown_seconds: float = 30
+    robbery: RobberyRules = field(default_factory=RobberyRules)
+    # Wealth roles are only given to members with at least this much.
+    role_min_balance: int = 1
 
 
 @dataclass(frozen=True)

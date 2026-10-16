@@ -10,6 +10,7 @@ import json
 from dataclasses import dataclass, field
 
 from marione.agent import persona
+from marione.agent.types import WorldSnapshot
 from marione.db.memory import Fact
 from marione.llm.types import Message
 
@@ -27,16 +28,39 @@ class ChatContext:
     balances: list[tuple[str, int]] = field(default_factory=list)
     facts: list[tuple[str, list[Fact]]] = field(default_factory=list)
     episodes: list[str] = field(default_factory=list)
+    tiers: dict[str, str] = field(default_factory=dict)  # member name -> "Cameriere, #7 of 128"
+    events: list[str] = field(default_factory=list)  # recent money events, oldest first
+    world: WorldSnapshot | None = None
+
+
+def render_world(world: WorldSnapshot) -> str:
+    lines = [f"- Now: {world.local_time}", f"- This channel: {world.channel}"]
+    if world.topic:
+        lines.append(f"- Channel topic: {world.topic}")
+    for channel, names in world.voice:
+        lines.append(f"- In voice, {channel}: {', '.join(names)}")
+    if not world.voice:
+        lines.append("- Nobody is in a voice channel.")
+    return "SERVER NOW:\n" + "\n".join(lines)
 
 
 def render_context(ctx: ChatContext) -> str:
     parts: list[str] = []
+    if ctx.world is not None:
+        parts.append(render_world(ctx.world))
     if ctx.summary:
         parts.append("CONVERSATION SO FAR:\n" + ctx.summary)
     if ctx.balances:
         parts.append(
-            "BALANCES:\n" + "\n".join(f"- {name}: {bal} Marioncelli" for name, bal in ctx.balances)
+            "BALANCES:\n"
+            + "\n".join(
+                f"- {name}: {bal} Marioncelli"
+                + (f" ({ctx.tiers[name]})" if name in ctx.tiers else "")
+                for name, bal in ctx.balances
+            )
         )
+    if ctx.events:
+        parts.append("RECENT MONEY EVENTS:\n" + "\n".join(f"- {e}" for e in ctx.events))
     profiles = [
         f"- {name}: " + "; ".join(f"{f.category}: {f.text}" for f in facts)
         for name, facts in ctx.facts

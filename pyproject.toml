@@ -30,6 +30,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 marione = ["py.typed"]
+"marione.web" = ["site/**/*"]
 
 [tool.ruff]
 line-length = 100

@@ -8,8 +8,8 @@ import discord
 from discord.ext import commands, tasks
 
 from marione.bot.adapters import unit
-from marione.domain.afk import VoiceFlags, is_away
 from marione.domain.spam import Verdict
+from marione.domain.voice import VoiceFlags, is_away
 
 if TYPE_CHECKING:
     from marione.bot.app import MarioneBot
@@ -62,7 +62,7 @@ class EconomyCog(commands.Cog):
         active: list[int] = []
         for channel in guild.voice_channels:
             for member in channel.members:
-                if member.bot or svc.afk.in_bed(member.id):
+                if member.bot:
                     continue
                 if member.voice is not None and not is_away(voice_flags(member.voice)):
                     await svc.ledger.remember_name(member.id, member.display_name)

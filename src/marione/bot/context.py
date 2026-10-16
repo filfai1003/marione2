@@ -4,17 +4,21 @@ from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 
 from marione.config import Settings
+from marione.db.chatlog import ChatLog
+from marione.db.heists import HeistRepo
 from marione.db.ledger import Ledger
 from marione.db.memory import MemoryRepo
 from marione.db.pool import Pool
+from marione.db.roles import RolesRepo
 from marione.db.settings import SettingsRepo
+from marione.db.soundboard import SoundboardRepo
 from marione.db.sounds import SoundsRepo
 from marione.db.usage import UsageRepo
 from marione.domain.rules import AgentRules, EconomyRules
 from marione.llm.budget import BudgetedLLM
 from marione.llm.openrouter import OpenRouterClient
-from marione.services.afk import AfkTracker
 from marione.services.economy import EconomyService
+from marione.services.sounds import SoundService
 
 
 @dataclass
@@ -24,10 +28,13 @@ class Services:
     ledger: Ledger
     settings: SettingsRepo
     sounds: SoundsRepo
+    soundboard: SoundboardRepo
+    roles: RolesRepo
+    chatlog: ChatLog
     memory: MemoryRepo
     usage: UsageRepo
     economy: EconomyService
-    afk: AfkTracker
+    sound_service: SoundService
     economy_rules: EconomyRules
     agent_rules: AgentRules
     llm: BudgetedLLM | None  # None when no OpenRouter key is configured
@@ -36,6 +43,8 @@ class Services:
 
 def build_services(config: Settings, pool: Pool) -> Services:
     ledger = Ledger(pool)
+    soundboard = SoundboardRepo(pool)
+    sounds = SoundsRepo(pool)
     usage = UsageRepo(pool)
     rules = EconomyRules()
     openrouter = OpenRouterClient(config.openrouter_api_key) if config.ai_enabled else None
@@ -55,11 +64,14 @@ def build_services(config: Settings, pool: Pool) -> Services:
         pool=pool,
         ledger=ledger,
         settings=SettingsRepo(pool),
-        sounds=SoundsRepo(pool),
+        sounds=sounds,
+        soundboard=soundboard,
+        roles=RolesRepo(pool),
+        chatlog=ChatLog(pool),
         memory=MemoryRepo(pool),
         usage=usage,
-        economy=EconomyService(ledger, rules),
-        afk=AfkTracker(rules),
+        economy=EconomyService(ledger, rules, HeistRepo(pool)),
+        sound_service=SoundService(soundboard, sounds),
         economy_rules=rules,
         agent_rules=AgentRules(),
         llm=llm,

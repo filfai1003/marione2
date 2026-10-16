@@ -1,0 +1,35 @@
+/* ============================================================
+   MARIONE · RAGGI & OMBRE
+   Angoli morbidi (polpette!) + ombre calde, mai grigie.
+   Stile sticker: bordo spesso scuro + ombra piena offset.
+   ============================================================ */
+:root {
+  /* raggi */
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --radius-xl: 32px;
+  --radius-pill: 999px;
+  --radius-blob: 40% 60% 62% 38% / 45% 45% 55% 55%; /* polpetta */
+
+  /* bordo "sticker" */
+  --border-w: 2px;
+  --border-w-thick: 3px;
+  --border-ink: var(--line);
+
+  /* ombre calde (tinta oliva, non grigio) */
+  --shadow-xs: 0 1px 2px rgba(36, 31, 20, 0.10);
+  --shadow-sm: 0 2px 6px rgba(36, 31, 20, 0.12);
+  --shadow-md: 0 8px 20px rgba(36, 31, 20, 0.14);
+  --shadow-lg: 0 18px 40px rgba(36, 31, 20, 0.18);
+
+  /* ombra "sticker" piena e offset (firma del brand) */
+  --shadow-sticker:      3px 3px 0 var(--shadow-ink);
+  --shadow-sticker-lg:   5px 5px 0 var(--shadow-ink);
+  --shadow-sticker-red:  4px 4px 0 var(--pomodoro-500);
+  --shadow-sticker-green:4px 4px 0 var(--basilico-500);
+
+  /* pressione: l'offset si riduce (schiacciata) */
+  --shadow-sticker-press: 1px 1px 0 var(--shadow-ink);
+}

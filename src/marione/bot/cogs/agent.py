@@ -1,13 +1,15 @@
 """Marione's chat brain, wired to Discord: messages in, one reply out."""
 
 import logging
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 import discord
 from discord.ext import commands, tasks
 
 from marione.agent.service import AgentConfig, ChatAgent
-from marione.bot.adapters import GuildDirectory, format_reply, to_chat_message
+from marione.bot.adapters import DiscordWorld, GuildDirectory, format_reply, to_chat_message
 from marione.clock import SystemClock
 from marione.domain.triggers import compile_trigger
 from marione.llm.types import LLMError
@@ -47,6 +49,12 @@ class AgentCog(commands.Cog):
             bot_name=self._bot_name,
             clock=SystemClock(),
             rules=svc.agent_rules,
+            chatlog=svc.chatlog,
+            world=DiscordWorld(
+                lambda: self.bot.get_guild(self.bot.guild_id),
+                ZoneInfo(cfg.timezone),
+                lambda: datetime.now(UTC),
+            ),
         )
         self.bot.chat_agent = self.agent
         self.maintenance_loop.start()

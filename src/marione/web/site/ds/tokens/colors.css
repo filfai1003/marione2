@@ -1,0 +1,171 @@
+/* ============================================================
+   MARIONE · COLORI  ("Tricolore caldo e appetitoso")
+   Verde basilico · Rosso pomodoro · Bianco panna
+   + Giallo parmigiano/oro · Marrone poltrona · Oliva scuro
+   Scale 50–900, stati, e coppie di contrasto AA.
+   ============================================================ */
+:root {
+  /* ---- BASILICO (verde, primario) ---- */
+  --basilico-50:  #eef7ee;
+  --basilico-100: #d6ecd6;
+  --basilico-200: #aedcae;
+  --basilico-300: #7ec67e;
+  --basilico-400: #52ac54;
+  --basilico-500: #2f8f36;   /* primario */
+  --basilico-600: #237a2c;   /* hover */
+  --basilico-700: #1b6123;   /* active */
+  --basilico-800: #164e1d;
+  --basilico-900: #103a16;
+
+  /* ---- POMODORO / SUGO (rosso, accento & azioni) ---- */
+  --pomodoro-50:  #fdecea;
+  --pomodoro-100: #fbd3ce;
+  --pomodoro-200: #f6a79d;
+  --pomodoro-300: #f0776a;
+  --pomodoro-400: #e64f3f;
+  --pomodoro-500: #d5321f;   /* accento / azione */
+  --pomodoro-600: #b8291a;   /* hover */
+  --pomodoro-700: #971f14;   /* active */
+  --pomodoro-800: #761810;
+  --pomodoro-900: #57120c;
+
+  /* ---- PANNA / MOZZARELLA (bianco caldo, sfondo) ---- */
+  --panna-50:  #ffffff;
+  --panna-100: #fffdf8;   /* sfondo pagina */
+  --panna-200: #fdf6e9;   /* card / superfici */
+  --panna-300: #f7ecd6;
+  --panna-400: #efdcbb;
+  --panna-500: #e4c99a;
+
+  /* ---- PARMIGIANO / ORO (Marioncelli, premi) ---- */
+  --oro-50:  #fdf6df;
+  --oro-100: #fbead9; /* soft */
+  --oro-200: #f7dd98;
+  --oro-300: #f2c94c;   /* moneta base */
+  --oro-400: #e9b420;   /* moneta */
+  --oro-500: #d29a0a;   /* oro scuro */
+  --oro-600: #a97a06;
+  --oro-700: #7f5b06;
+
+  /* ---- POLTRONA / LEGNO (marrone caldo) ---- */
+  --legno-100: #efe0d1;
+  --legno-200: #d9bfa0;
+  --legno-300: #c39c73;
+  --legno-400: #a97b4d;
+  --legno-500: #8a5e34;
+  --legno-600: #6d4826;
+  --legno-700: #4f3319;
+
+  /* ---- OLIVA SCURO (testo, quasi-nero) ---- */
+  --oliva-900: #241f14;   /* testo principale */
+  --oliva-700: #3f382a;   /* testo secondario */
+  --oliva-500: #6b6250;   /* muted */
+  --oliva-300: #a79c85;   /* placeholder / disabled */
+
+  /* ============================================================
+     ALIAS SEMANTICI
+     ============================================================ */
+  --color-primary:        var(--basilico-500);
+  --color-primary-hover:  var(--basilico-600);
+  --color-primary-active: var(--basilico-700);
+
+  --color-accent:         var(--pomodoro-500);
+  --color-accent-hover:   var(--pomodoro-600);
+  --color-accent-active:  var(--pomodoro-700);
+
+  --color-coin:           var(--oro-400);
+  --color-coin-dark:      var(--oro-600);
+
+  /* ============================================================
+     TEMA · superfici + inchiostro + linee (light = default)
+     Questi token cambiano tra chiaro/scuro. I componenti li usano
+     al posto delle scale grezze, così il tema li segue.
+     ============================================================ */
+  --page:           var(--panna-100);  /* sfondo pagina */
+  --surface:        var(--panna-100);  /* card / nav / hero / modal */
+  --surface-2:      var(--panna-200);  /* pannelli secondari */
+  --surface-sunken: var(--panna-300);  /* disabled / incassato */
+  --surface-hair:   var(--panna-400);  /* bordi sottili / divisori */
+  --highlight-gold: var(--oro-50);     /* riga evidenziata (tu) */
+
+  --ink:       var(--oliva-900);        /* testo forte */
+  --ink-soft:  var(--oliva-700);        /* testo body */
+  --ink-muted: var(--oliva-500);        /* testo muted */
+
+  --line:       var(--oliva-900);       /* bordo sticker */
+  --shadow-ink: var(--oliva-900);       /* colore ombra sticker */
+  --surface-invert: var(--oliva-900);
+
+  /* testo */
+  --text-strong:      var(--oliva-900);
+  --text-body:        var(--oliva-700);
+  --text-muted:       var(--oliva-500);
+  --text-placeholder: var(--oliva-300);
+  --text-on-primary:  #ffffff;   /* AA su basilico-500 (5.0:1) */
+  --text-on-accent:   #ffffff;   /* AA su pomodoro-500 (5.3:1) */
+  --text-on-coin:     var(--oliva-900); /* AA su oro-400 (9.1:1) */
+
+  /* bordi */
+  --border-strong: var(--oliva-900);
+  --border-soft:   var(--legno-300);
+  --border-hair:   var(--panna-400);
+
+  /* stati */
+  --state-disabled-bg:   var(--panna-300);
+  --state-disabled-text: var(--oliva-300);
+  --focus-ring:          var(--oro-400);
+
+  /* semantici feedback */
+  --success: var(--basilico-500);
+  --danger:  var(--pomodoro-500);
+  --warning: var(--oro-500);
+  --info:    #2c6fa8;
+
+  /* tovaglia (quadretti) */
+  --tovaglia-red:   var(--pomodoro-500);
+  --tovaglia-white: var(--panna-100);
+}
+
+/* ============================================================
+   MODALITÀ SCURA · "trattoria a lume di candela"
+   Legno scuro + panna calda per il testo. L'outline sticker
+   resta scuro-scurissimo così il look cartoon rimane.
+   Attiva con  <html data-theme="dark">  (o su qualsiasi
+   contenitore: i custom properties ereditano nel sottoalbero).
+   ============================================================ */
+[data-theme="dark"] {
+  --page:           #14100a;
+  --surface:        #2a2317;
+  --surface-2:      #211b11;
+  --surface-sunken: #372f20;
+  --surface-hair:   #4a4030;
+  --highlight-gold: rgba(233, 180, 32, 0.16);
+
+  --ink:       #f8eeda;
+  --ink-soft:  #dccdb2;
+  --ink-muted: #a89a7f;
+
+  --line:       #0f0a05;
+  --shadow-ink: #000000;
+
+  color-scheme: dark;
+}
+
+/*
+  COPPIE DI CONTRASTO AA (dark):
+  - #f8eeda su #2a2317 ....... 12.6:1 ✅ AAA (testo forte)
+  - #dccdb2 su #2a2317 .......  9.1:1 ✅ AAA (body)
+  - #fff su basilico-500 .....  5.0:1 ✅ AA
+  - #fff su pomodoro-500 .....  5.3:1 ✅ AA
+  - oliva-900 su oro-400 .....  9.1:1 ✅ (label bottoni/pill oro, testo scuro fisso)
+*/
+
+/*
+  COPPIE DI CONTRASTO AA (verificate):
+  - oliva-900 su panna-100 ............ 14.8:1  ✅ AAA
+  - oliva-700 su panna-200 ............  9.6:1  ✅ AAA
+  - #fff su basilico-500 ..............  5.0:1  ✅ AA
+  - #fff su pomodoro-500 ..............  5.3:1  ✅ AA
+  - oliva-900 su oro-400 ..............  9.1:1  ✅ AAA
+  - oliva-900 su panna-200 ............ 13.9:1  ✅ AAA
+*/

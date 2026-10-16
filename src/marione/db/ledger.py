@@ -208,3 +208,49 @@ class Ledger:
         """Members whose balance differs from their ledger. Must always be empty."""
         rows = await self._pool.fetch("select user_id from marione.balance_audit")
         return [r["user_id"] for r in rows]
+
+    # --- reads used by the ranking, the roles and the web page ---------------------------------
+
+    async def rank_of(self, user_id: int) -> tuple[int, int]:
+        """(position, how many members hold coins). Position 0 if the member holds none."""
+        row = await self._pool.fetchrow(
+            "select (select count(*) from marione.balances where balance > 0) as total,"
+            " (select count(*) + 1 from marione.balances"
+            "   where balance > (select balance from marione.balances where user_id = $1)) as pos,"
+            " (select balance from marione.balances where user_id = $1) as mine",
+            user_id,
+        )
+        if row is None or not row["mine"]:
+            return 0, int(row["total"]) if row else 0
+        return int(row["pos"]), int(row["total"])
+
+    async def total_money(self) -> int:
+        """All the coins in circulation: the robbery fine scales with it."""
+        value = await self._pool.fetchval("select coalesce(sum(balance), 0) from marione.balances")
+        return int(value)
+
+    async def balances(self) -> dict[int, int]:
+        """Every member with coins."""
+        rows = await self._pool.fetch(
+            "select user_id, balance from marione.balances where balance > 0"
+        )
+        return {r["user_id"]: r["balance"] for r in rows}
+
+    async def holders(self) -> list[tuple[int, str, int]]:
+        """(id, name, balance) of everyone who ever held coins, by name."""
+        rows = await self._pool.fetch(
+            "select b.user_id, m.display_name, b.balance from marione.balances b"
+            " join marione.members m using (user_id) order by lower(m.display_name), b.user_id"
+        )
+        return [(r["user_id"], r["display_name"], r["balance"]) for r in rows]
+
+    async def recent_events(self, user_ids: list[int], limit: int = 6) -> list[LedgerEntry]:
+        """The latest payments, heists, gifts and fines of these members (not the small rewards)."""
+        rows = await self._pool.fetch(
+            "select * from marione.ledger where user_id = any($1::bigint[]) and reason in"
+            " ('transfer_in', 'transfer_out', 'rob_in', 'rob_out', 'rob_fine_in', 'rob_fine_out',"
+            " 'agent_gift_in', 'agent_fine_out') order by id desc limit $2",
+            user_ids,
+            limit,
+        )
+        return [_entry(r) for r in rows]

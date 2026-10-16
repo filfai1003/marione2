@@ -21,12 +21,15 @@ from marione.agent.profiler import parse_facts
 from marione.agent.prompt import ChatContext, Line
 from marione.agent.sessions import Session, SessionManager
 from marione.agent.tools import ToolContext, ToolRegistry, chat_registry
-from marione.agent.types import ChatMessage, MemberDirectory, Reply
+from marione.agent.types import ChatMessage, MemberDirectory, Reply, WorldView
+from marione.db.chatlog import ChatLog
 from marione.db.ledger import Ledger
 from marione.db.memory import MemoryRepo
 from marione.db.settings import SettingsRepo
+from marione.domain.roles import tier_for
 from marione.domain.rules import AgentRules
 from marione.domain.triggers import strip_speaker_prefix
+from marione.labels import describe
 from marione.llm.types import LLMClient, LLMError
 
 logger = logging.getLogger("marione.agent")
@@ -66,6 +69,9 @@ class AgentConfig:
     profile_batch: int = 3
     observations_per_member: int = 40
     max_reply_chars: int = 1900
+    hydrate_lines: int = 30  # lines reloaded from the database when a channel wakes up
+    events_in_context: int = 5
+    log_trim_seconds: float = 3600
 
 
 @dataclass
@@ -90,6 +96,8 @@ class ChatAgent:
         clock: Clock,
         rules: AgentRules | None = None,
         registry: ToolRegistry | None = None,
+        chatlog: ChatLog | None = None,
+        world: WorldView | None = None,
     ) -> None:
         self._llm = llm
         self._ledger = ledger
@@ -105,6 +113,9 @@ class ChatAgent:
         self._sessions = SessionManager()
         self._observations: dict[int, _Observation] = {}
         self._known_names: dict[int, str] = {}
+        self._chatlog = chatlog
+        self._world = world
+        self._last_trim = 0.0
 
     # --- the message path ------------------------------------------------------------------------
 
@@ -116,10 +127,12 @@ class ChatAgent:
             return None
 
         now = self._clock.mono()
-        session = self._sessions.get(msg.channel_id, now)
-        session.add(Line(msg.author_id, msg.author_name, msg.content), now)
+        session = await self._session_for(msg.channel_id, now)
+        text = self._with_attachments(msg)
+        session.add(Line(msg.author_id, msg.author_name, text), now)
         session.trim_hard(self._cfg.hard_window)
         await self._note_member(msg)
+        await self._log(msg.channel_id, msg.message_id, msg.author_id, msg.author_name, text, msg)
 
         expect_reply = level is Level0.ADDRESSED or session.in_followup(
             now, self._cfg.followup_seconds, self._cfg.followup_max_msgs
@@ -135,7 +148,51 @@ class ChatAgent:
         if reply is not None and reply.text:
             session.add(Line(self._bot_id, self._bot_name(), reply.text), self._clock.mono())
             session.note_bot_reply(self._clock.mono())
+            # The bot's own message id is only known once Discord has sent it: a negative id
+            # derived from the message it answers keeps the line without colliding with real ones.
+            await self._log(
+                msg.channel_id, -msg.message_id, self._bot_id, self._bot_name(), reply.text, None
+            )
         return reply
+
+    async def _session_for(self, channel_id: int, now: float) -> Session:
+        """The live window of a channel; after a restart it is reloaded from the database."""
+        session = self._sessions.find(channel_id)
+        if session is not None:
+            return session
+        session = self._sessions.get(channel_id, now)
+        if self._chatlog is not None:
+            for line in await self._chatlog.recent(channel_id, self._cfg.hydrate_lines):
+                session.window.append(Line(line.author_id, line.author_name, line.content))
+        return session
+
+    async def _log(
+        self,
+        channel_id: int,
+        message_id: int,
+        author_id: int,
+        author_name: str,
+        text: str,
+        msg: ChatMessage | None,
+    ) -> None:
+        if self._chatlog is None:
+            return
+        await self._chatlog.append(
+            channel_id,
+            message_id,
+            author_id,
+            author_name,
+            text,
+            is_bot=msg is None,
+            reply_to_message_id=msg.reply_to_message_id if msg else None,
+        )
+
+    @staticmethod
+    def _with_attachments(msg: ChatMessage) -> str:
+        if not msg.attachments:
+            return msg.content
+        shown = ", ".join(msg.attachments)
+        return f"{msg.content} [attached: {shown}]".strip()
 
     async def _note_member(self, msg: ChatMessage) -> None:
         if self._known_names.get(msg.author_id) != msg.author_name:
@@ -213,11 +270,14 @@ class ChatAgent:
         return Reply(text, result.actions)
 
     def _current_line(self, msg: ChatMessage) -> str:
-        if msg.reply_to_id:
-            target = self._known_names.get(msg.reply_to_id)
-            if target:
-                return f"{msg.author_name} (replying to {target}): {msg.content}"
-        return f"{msg.author_name}: {msg.content}"
+        text = self._with_attachments(msg)
+        target = msg.reply_author or self._known_names.get(msg.reply_to_id or 0)
+        if target and msg.reply_text:
+            quoted = msg.reply_text.replace("\n", " ")[:200]
+            return f'{msg.author_name} (replying to {target}: "{quoted}"): {text}'
+        if target:
+            return f"{msg.author_name} (replying to {target}): {text}"
+        return f"{msg.author_name}: {text}"
 
     def _clean(self, text: str | None) -> str | None:
         if not text:
@@ -235,12 +295,30 @@ class ChatAgent:
         names = {u: await self._ledger.name_of(u, str(u)) for u in involved}
         facts = await self._memory.facts_for(involved)
         episodes = await self._memory.episodes_for(involved, self._cfg.context_episodes)
+        balances = [(names[u], await self._ledger.balance(u)) for u in involved]
+        tiers: dict[str, str] = {}
+        for uid, (name, balance) in zip(involved, balances, strict=True):
+            rank, total = await self._ledger.rank_of(uid)
+            place = f", #{rank} of {total}" if rank else ""
+            tiers[name] = f"{tier_for(balance).name}{place}"
         return ChatContext(
             summary=await self._memory.summary(msg.channel_id),
-            balances=[(names[u], await self._ledger.balance(u)) for u in involved],
+            balances=balances,
             facts=[(names[u], facts[u]) for u in involved if u in facts],
             episodes=[e.text for e in episodes],
+            tiers=tiers,
+            events=await self._events(involved),
+            world=self._world.snapshot(msg.channel_id) if self._world is not None else None,
         )
+
+    async def _events(self, involved: list[int]) -> list[str]:
+        entries = await self._ledger.recent_events(involved, self._cfg.events_in_context)
+        lines: list[str] = []
+        for e in reversed(entries):
+            who = await self._ledger.name_of(e.user_id, str(e.user_id))
+            other = await self._ledger.name_of(e.counterparty, "") if e.counterparty else None
+            lines.append(f"{who}: {describe(e.reason, other)} ({e.delta:+d})")
+        return lines
 
     # --- background work -------------------------------------------------------------------------
 
@@ -249,6 +327,9 @@ class ChatAgent:
         if not await self._settings.is_enabled("agent"):
             return
         now = self._clock.mono()
+        if self._chatlog is not None and now - self._last_trim >= self._cfg.log_trim_seconds:
+            self._last_trim = now
+            await self._chatlog.trim()
         for session in self._sessions.all():
             if session.is_idle(now, self._cfg.idle_seconds):
                 await self._close(session)
@@ -319,4 +400,7 @@ class ChatAgent:
     async def forget(self, user_id: int) -> int:
         """A member asks to be forgotten: stored facts and pending observations."""
         self._observations.pop(user_id, None)
-        return await self._memory.forget_member(user_id)
+        count = await self._memory.forget_member(user_id)
+        for session in self._sessions.all():
+            session.window = [m for m in session.window if m.author_id != user_id]
+        return count

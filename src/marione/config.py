@@ -23,8 +23,14 @@ class Settings(BaseSettings):
     agent_daily_budget_usd: float = Field(default=0.5, ge=0)
     agent_monthly_budget_usd: float = Field(default=10.0, ge=0)
 
-    # Name of the private voice channel idle members are moved to.
-    afk_channel_name: str = "il letto"
+    # The web page. Login is Discord OAuth: create an application at
+    # https://discord.com/developers/applications, add PUBLIC_URL/auth/callback as a redirect.
+    public_url: str = ""  # e.g. https://marione.up.railway.app
+    discord_client_id: str = ""
+    discord_client_secret: str = ""
+    web_session_secret: str = ""  # long random string that signs the login cookie
+    announce_channel_id: int = 0  # where web actions (a heist) are announced; 0 = system channel
+
     port: int = 8080
     timezone: str = "Europe/Rome"
     migrations_dir: Path = _DEFAULT_MIGRATIONS
@@ -32,6 +38,17 @@ class Settings(BaseSettings):
     @property
     def fallback_models(self) -> list[str]:
         return [m.strip() for m in self.agent_fallback_models.split(",") if m.strip()]
+
+    @property
+    def oauth_ready(self) -> bool:
+        return all(
+            (
+                self.public_url,
+                self.discord_client_id,
+                self.discord_client_secret,
+                self.web_session_secret,
+            )
+        )
 
     @property
     def ai_enabled(self) -> bool:

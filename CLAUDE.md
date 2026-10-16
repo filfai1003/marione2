@@ -9,3 +9,6 @@
 - Niente `except Exception` (ruff BLE). Migrazioni: solo nuovi file `migrations/NNNN_*.sql`, mai modificare quelli applicati.
 - Python 3.12 fisso (l'audio di discord.py richiede `audioop`).
 - Non fare deploy né toccare il Postgres di produzione senza chiederlo all'utente.
+- Il sito (`src/marione/web/`) non importa discord.py: parla con Discord solo tramite `ports.GuildView`. Il contratto con la pagina è `docs/WEB_API.md`: cambiare un endpoint = aggiornare contratto, `site/js/` e test.
+- Le funzioni accendibili sono in `db/settings.py` (`FEATURES`); i ruoli ricchezza sono spenti di default.
+- Mai salvare dati nei messaggi/canali Discord: tutto nel database.

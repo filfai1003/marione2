@@ -59,11 +59,6 @@ def msg(
     return ChatMessage(author, name, text, channel_id=10, message_id=mid, addressed=addressed, **kw)
 
 
-@pytest.fixture
-def clock() -> Clock:
-    return Clock()
-
-
 def make_agent(pool: Pool, llm: ScriptedLLM, clock: Clock, **cfg: Any) -> ChatAgent:
     return ChatAgent(
         llm=llm,

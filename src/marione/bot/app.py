@@ -7,21 +7,21 @@ from discord.ext import commands
 
 from marione.agent.service import ChatAgent
 from marione.bot.context import Services
-from marione.bot.voice import load_opus
+from marione.bot.voice import VoicePlayer, load_opus
 
 logger = logging.getLogger("marione")
 
 EXTENSIONS = (
     "marione.bot.cogs.economy",
     "marione.bot.cogs.entrance",
-    "marione.bot.cogs.afk",
+    "marione.bot.cogs.roles",
     "marione.bot.cogs.agent",
     "marione.bot.cogs.commands",
 )
 
 
 class MarioneBot(commands.Bot):
-    def __init__(self, services: Services) -> None:
+    def __init__(self, services: Services, voice: VoicePlayer) -> None:
         intents = discord.Intents.default()
         intents.members = True  # to find members by name and see who is in voice
         intents.voice_states = True
@@ -30,6 +30,7 @@ class MarioneBot(commands.Bot):
         self.services = services
         self.guild_id = services.config.guild_id
         self.chat_agent: ChatAgent | None = None
+        self.voice = voice
 
     async def setup_hook(self) -> None:
         load_opus()

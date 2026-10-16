@@ -1,0 +1,45 @@
+/* ============================================================
+   MARIONE · PATTERN & TEXTURE (motivi trattoria)
+   Tovaglia a quadretti, onda spaghetti, pallini polpetta.
+   Puri CSS — nessuna immagine esterna.
+   ============================================================ */
+:root {
+  /* tovaglia a quadretti rossi — usa come background-image */
+  --pattern-tovaglia:
+    repeating-linear-gradient(0deg,  rgba(213,50,31,0.16) 0 22px, transparent 22px 44px),
+    repeating-linear-gradient(90deg, rgba(213,50,31,0.16) 0 22px, transparent 22px 44px),
+    repeating-linear-gradient(0deg,  rgba(213,50,31,0.10) 22px 44px, transparent 0 22px),
+    repeating-linear-gradient(90deg, rgba(213,50,31,0.10) 22px 44px, transparent 0 22px); /* @kind other */
+  --pattern-tovaglia-size: 44px 44px; /* @kind other */
+
+  /* pois "polpetta" (pallini oro su panna) */
+  --pattern-polpette:
+    radial-gradient(circle, var(--oro-300) 3px, transparent 3.5px);
+  --pattern-polpette-size: 26px 26px; /* @kind other */
+}
+
+/* tovaglia pronta all'uso */
+.mar-tovaglia {
+  background-color: var(--surface);
+  background-image: var(--pattern-tovaglia);
+  background-size: var(--pattern-tovaglia-size);
+}
+
+/* onda "spaghetti" come divisore (bordo ondulato) */
+.mar-spaghetti-divider {
+  height: 14px;
+  width: 100%;
+  background-image:
+    radial-gradient(circle at 11px -6px, transparent 12px, var(--oro-400) 12px 14px, transparent 15px);
+  background-size: 44px 20px;
+  background-repeat: repeat-x;
+  opacity: 0.9;
+}
+
+/* cornice "pizzo" (centrino nonna) — bordo smerlato */
+.mar-pizzo {
+  --pizzo-size: 16px;
+  -webkit-mask:
+    radial-gradient(circle at var(--pizzo-size) 100%, transparent 0, transparent 8px, #000 8.5px) 0 100% / calc(var(--pizzo-size) * 2) var(--pizzo-size) repeat-x;
+  padding-bottom: var(--pizzo-size);
+}

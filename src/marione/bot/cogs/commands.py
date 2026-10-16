@@ -8,29 +8,17 @@ from discord import app_commands
 from discord.ext import commands
 
 from marione.bot.adapters import unit
+from marione.bot.texts import pay_line, rob_line, rob_refusal
+from marione.bot.voice import PlayStatus
 from marione.db.settings import FEATURES
 from marione.db.sounds import SoundError
+from marione.domain.roles import tier_for
+from marione.labels import describe
 
 if TYPE_CHECKING:
     from marione.bot.app import MarioneBot
 
 logger = logging.getLogger("marione.commands")
-
-REASON_LABELS = {
-    "chat_reward": "messaggi",
-    "voice_reward": "vocale",
-    "transfer_out": "pagamento inviato",
-    "transfer_in": "pagamento ricevuto",
-    "afk_fine": "multa AFK",
-    "afk_drain": "letto AFK",
-    "spam_fine": "multa spam",
-    "agent_fine_out": "multa di Marione",
-    "agent_fine_in": "multa incassata",
-    "agent_gift_out": "regalo fatto",
-    "agent_gift_in": "regalo di Marione",
-    "admin_adjust": "intervento admin",
-    "reversal": "annullamento",
-}
 
 
 class CommandsCog(commands.Cog):
@@ -54,9 +42,15 @@ class CommandsCog(commands.Cog):
         self, interaction: discord.Interaction, membro: discord.Member | None = None
     ) -> None:
         target = membro or interaction.user
-        amount = await self.bot.services.ledger.balance(target.id)
+        ledger = self.bot.services.ledger
+        amount = await ledger.balance(target.id)
+        tier = tier_for(amount)
+        rank, total = await ledger.rank_of(target.id)
+        place = f" · #{rank} su {total}" if rank else ""
         await interaction.response.send_message(
-            f"💰 **{target.display_name}** ha **{amount} {unit(amount)}**", ephemeral=membro is None
+            f"💰 **{target.display_name}** ha **{amount} {unit(amount)}**\n"
+            f"{tier.emoji} {tier.name}{place}",
+            ephemeral=membro is None,
         )
 
     @marione.command(name="paga", description="Dai dei Marioncelli a un altro membro")
@@ -71,19 +65,50 @@ class CommandsCog(commands.Cog):
                 "Non puoi pagare te stesso o un bot.", ephemeral=True
             )
             return
-        ledger = self.bot.services.ledger
-        await ledger.remember_name(interaction.user.id, interaction.user.display_name)
-        await ledger.remember_name(membro.id, membro.display_name)
+        svc = self.bot.services
+        if not await svc.settings.is_enabled("economy"):
+            await interaction.response.send_message("L'economia è in pausa.", ephemeral=True)
+            return
+        await svc.ledger.remember_name(interaction.user.id, interaction.user.display_name)
+        await svc.ledger.remember_name(membro.id, membro.display_name)
         # The interaction id makes a double click or a retry pay only once.
-        ok = await ledger.pay(interaction.user.id, membro.id, importo, key=f"pay:{interaction.id}")
+        ok = await svc.economy.pay(
+            interaction.user.id, membro.id, importo, key=f"pay:{interaction.id}"
+        )
         if not ok:
             await interaction.response.send_message(
                 "Non hai abbastanza Marioncelli.", ephemeral=True
             )
             return
         await interaction.response.send_message(
-            f"💸 **{interaction.user.display_name}** ha dato **{importo} {unit(importo)}** a "
-            f"**{membro.display_name}**"
+            pay_line(interaction.user.display_name, membro.display_name, importo)
+        )
+
+    @marione.command(name="deruba", description="Tenta un furto: se ti beccano paghi una multa")
+    async def rob(
+        self,
+        interaction: discord.Interaction,
+        membro: discord.Member,
+        importo: app_commands.Range[int, 1, 1_000_000_000],
+    ) -> None:
+        svc = self.bot.services
+        if membro.bot or not (
+            await svc.settings.is_enabled("economy") and await svc.settings.is_enabled("rob")
+        ):
+            await interaction.response.send_message(
+                "Il furto non è disponibile adesso.", ephemeral=True
+            )
+            return
+        await svc.ledger.remember_name(interaction.user.id, interaction.user.display_name)
+        await svc.ledger.remember_name(membro.id, membro.display_name)
+        result = await svc.economy.rob(interaction.user.id, membro.id, importo)
+        if result.refused:
+            await interaction.response.send_message(
+                rob_refusal(result, svc.economy_rules.robbery.min_amount), ephemeral=True
+            )
+            return
+        await interaction.response.send_message(
+            rob_line(interaction.user.display_name, membro.display_name, result)
         )
 
     @marione.command(name="classifica", description="I più ricchi del server")
@@ -105,9 +130,7 @@ class CommandsCog(commands.Cog):
         if not entries:
             await interaction.response.send_message("Nessun movimento.", ephemeral=True)
             return
-        lines = [
-            f"`#{e.id}` {e.delta:+d} — {REASON_LABELS.get(e.reason, e.reason)}" for e in entries
-        ]
+        lines = [f"`#{e.id}` {e.delta:+d} — {describe(e.reason)}" for e in entries]
         await interaction.response.send_message("\n".join(lines), ephemeral=True)
 
     @marione.command(
@@ -119,8 +142,8 @@ class CommandsCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         name = (nome or file.filename.rsplit(".", 1)[0]).strip()
         try:
-            await self.bot.services.sounds.add(
-                interaction.user.id, name, file.content_type or "", await file.read()
+            await self.bot.services.sound_service.add_entrance(
+                interaction.user.id, name, await file.read()
             )
         except SoundError as exc:
             await interaction.followup.send(f"❌ {exc}", ephemeral=True)
@@ -140,16 +163,97 @@ class CommandsCog(commands.Cog):
             "🗑️ Eliminato." if removed else "Non ho trovato questo audio.", ephemeral=True
         )
 
+    @marione.command(name="soundboard", description="Suona un suono della soundboard in vocale")
+    @app_commands.describe(suono="Il suono da suonare")
+    async def board_play(self, interaction: discord.Interaction, suono: str) -> None:
+        svc = self.bot.services
+        voice = getattr(interaction.user, "voice", None)
+        if voice is None or voice.channel is None:
+            await interaction.response.send_message(
+                "Entra prima in un canale vocale 🎧", ephemeral=True
+            )
+            return
+        if not await svc.settings.is_enabled("soundboard"):
+            await interaction.response.send_message("La soundboard è in pausa.", ephemeral=True)
+            return
+        found = await svc.soundboard.search(suono, 1)
+        audio = await svc.soundboard.audio(found[0].id) if found else None
+        if audio is None:
+            await interaction.response.send_message("Non trovo questo suono.", ephemeral=True)
+            return
+        volume = await svc.settings.soundboard_volume() / 100
+        status = await self.bot.voice.play(voice.channel, audio.data, volume=volume, interrupt=True)
+        message = (
+            f"{found[0].emoji} **{audio.name}**"
+            if status is PlayStatus.OK
+            else "Non riesco a suonare adesso, riprova."
+        )
+        await interaction.response.send_message(message, ephemeral=status is not PlayStatus.OK)
+
+    @board_play.autocomplete("suono")
+    async def _board_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[str]]:
+        sounds = await self.bot.services.soundboard.search(current, 25)
+        return [app_commands.Choice(name=f"{s.emoji} {s.name}"[:100], value=s.name) for s in sounds]
+
+    @marione.command(name="soundboard-aggiungi", description="Aggiungi un suono alla soundboard")
+    async def board_add(
+        self,
+        interaction: discord.Interaction,
+        file: discord.Attachment,
+        nome: str | None = None,
+        emoji: str | None = None,
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+        name = (nome or file.filename.rsplit(".", 1)[0]).strip()
+        try:
+            await self.bot.services.sound_service.add_to_board(
+                interaction.user.id, name, emoji or "🔊", await file.read()
+            )
+        except SoundError as exc:
+            await interaction.followup.send(f"❌ {exc}", ephemeral=True)
+            return
+        await interaction.followup.send(f"🔊 **{name}** è nella soundboard.", ephemeral=True)
+
+    @marione.command(name="soundboard-rimuovi", description="Elimina un tuo suono dalla soundboard")
+    @app_commands.describe(suono="Il suono da eliminare")
+    async def board_remove(self, interaction: discord.Interaction, suono: str) -> None:
+        svc = self.bot.services
+        found = await svc.soundboard.search(suono, 1)
+        sound = found[0] if found else None
+        is_admin = bool(getattr(interaction.user, "guild_permissions", None)) and bool(
+            interaction.user.guild_permissions.administrator  # type: ignore[union-attr]
+        )
+        if sound is None or not svc.sound_service.may_modify(
+            sound, interaction.user.id, is_admin=is_admin
+        ):
+            await interaction.response.send_message(
+                "Non trovo un suono tuo con questo nome.", ephemeral=True
+            )
+            return
+        await svc.soundboard.remove(sound.id)
+        await interaction.response.send_message("🗑️ Eliminato.", ephemeral=True)
+
+    @board_remove.autocomplete("suono")
+    async def _board_remove_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[str]]:
+        sounds = await self.bot.services.soundboard.search(current, 25)
+        return [app_commands.Choice(name=f"{s.emoji} {s.name}"[:100], value=s.name) for s in sounds]
+
     @marione.command(
         name="dimentica", description="Cancella tutto quello che Marione ricorda di te"
     )
     async def forget(self, interaction: discord.Interaction) -> None:
         agent = self.bot.chat_agent
+        svc = self.bot.services
         count = (
             await agent.forget(interaction.user.id)
             if agent is not None
-            else await self.bot.services.memory.forget_member(interaction.user.id)
+            else await svc.memory.forget_member(interaction.user.id)
         )
+        count += await svc.chatlog.forget_member(interaction.user.id)
         await interaction.response.send_message(
             f"🧽 Fatto: ho dimenticato {count} cose su di te.", ephemeral=True
         )

@@ -5,16 +5,15 @@ from uuid import uuid4
 
 import discord
 import pytest
-from aiohttp.test_utils import TestClient, TestServer
 
 from marione.agent.types import ActionRecord, MemberRef, Reply
 from marione.bot.adapters import GuildDirectory, action_headline, format_reply, to_chat_message
 from marione.bot.app import EXTENSIONS, MarioneBot
 from marione.bot.context import build_services
+from marione.bot.voice import VoicePlayer
 from marione.config import Settings
 from marione.db.pool import Pool
 from marione.domain.triggers import compile_trigger
-from marione.health import create_app
 from marione.main import CRASH_BACKOFF, RATE_LIMIT_BACKOFF, restart_policy
 
 BOT = 999
@@ -25,15 +24,22 @@ def user(uid: int, name: str, bot: bool = False) -> Any:
     return SimpleNamespace(id=uid, display_name=name, name=name.lower(), bot=bot)
 
 
-def discord_message(text: str, *, mentions: list[Any] | None = None, reference: Any = None) -> Any:
+def discord_message(
+    text: str,
+    *,
+    mentions: list[Any] | None = None,
+    reference: Any = None,
+    attachments: list[Any] | None = None,
+) -> Any:
     return SimpleNamespace(
         id=77,
         content=text,
         clean_content=text,
         author=user(1, "Anna"),
-        channel=SimpleNamespace(id=10),
+        channel=SimpleNamespace(id=10, name="general"),
         mentions=mentions or [],
         reference=reference,
+        attachments=attachments or [],
     )
 
 
@@ -55,6 +61,22 @@ class TestToChatMessage:
         ref = SimpleNamespace(resolved=SimpleNamespace(author=user(BOT, "Marione", bot=True)))
         reply = to_chat_message(discord_message("boh", reference=ref), BOT, TRIGGERS)
         assert reply.addressed and reply.reply_to_id == BOT
+
+    def test_the_quoted_message_and_attachments_travel_with_it(self) -> None:
+        resolved = SimpleNamespace(
+            id=55, author=user(2, "Bruno"), clean_content="la pasta si spezza"
+        )
+        photo = SimpleNamespace(content_type="image/png", filename="gatto.png")
+        msg = to_chat_message(
+            discord_message(
+                "no", reference=SimpleNamespace(resolved=resolved), attachments=[photo]
+            ),
+            BOT,
+            TRIGGERS,
+        )
+        assert (msg.reply_to_message_id, msg.reply_author) == (55, "Bruno")
+        assert msg.reply_text == "la pasta si spezza"
+        assert msg.attachments == ("image: gatto.png",) and msg.channel_name == "general"
 
     def test_reply_to_someone_else_records_who_but_does_not_address(self) -> None:
         ref = SimpleNamespace(resolved=SimpleNamespace(author=user(2, "Bruno")))
@@ -139,22 +161,6 @@ class TestRestartPolicy:
         assert policy.retry and policy.delay == CRASH_BACKOFF
 
 
-async def test_health_endpoint_reports_database_and_discord() -> None:
-    async def ok() -> bool:
-        return True
-
-    async def down() -> bool:
-        return False
-
-    async with TestClient(TestServer(create_app(ok, lambda: True))) as client:
-        response = await client.get("/health")
-        assert response.status == 200
-        assert await response.json() == {"status": "ok", "database": True, "discord": True}
-    async with TestClient(TestServer(create_app(down, lambda: False))) as client:
-        response = await client.get("/health")
-        assert response.status == 503
-
-
 def test_settings_parse_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DISCORD_TOKEN", "t")
     monkeypatch.setenv("GUILD_ID", "123")
@@ -186,18 +192,26 @@ async def test_every_cog_loads_with_real_services_and_no_discord_connection(
         database_url="postgresql://unused",
         openrouter_api_key="",
     )
-    bot = MarioneBot(build_services(config, pool))
+    bot = MarioneBot(build_services(config, pool), VoicePlayer(lambda: None))
     try:
         for extension in EXTENSIONS:
             await bot.load_extension(extension)
-        assert {"EconomyCog", "EntranceCog", "AfkCog", "AgentCog", "CommandsCog"} <= set(bot.cogs)
+        assert {"EconomyCog", "EntranceCog", "RolesCog", "AgentCog", "CommandsCog"} <= set(bot.cogs)
         names = {c.name for c in bot.tree.get_commands()}
         assert {"marione", "marione-admin"} <= names
         marione = next(c for c in bot.tree.get_commands() if c.name == "marione")
         assert isinstance(marione, discord.app_commands.Group)
-        assert {"saldo", "paga", "classifica", "storico", "suono-aggiungi", "dimentica"} <= {
-            c.name for c in marione.commands
-        }
+        assert {
+            "saldo",
+            "paga",
+            "deruba",
+            "classifica",
+            "storico",
+            "suono-aggiungi",
+            "soundboard",
+            "soundboard-aggiungi",
+            "dimentica",
+        } <= {c.name for c in marione.commands}
     finally:
         for name in list(bot.cogs):
             await bot.remove_cog(name)

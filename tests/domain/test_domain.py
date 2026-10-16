@@ -2,11 +2,11 @@ import re
 from datetime import UTC, datetime, timedelta
 from typing import ClassVar
 
-from marione.domain.afk import VoiceFlags, is_away, is_due
 from marione.domain.guardrails import check_agent_action
 from marione.domain.rules import AgentRules, EconomyRules
 from marione.domain.spam import SpamTracker, Verdict, spam_fine
 from marione.domain.triggers import compile_trigger, is_called, strip_speaker_prefix
+from marione.domain.voice import VoiceFlags, is_away
 
 RULES = EconomyRules()
 
@@ -112,15 +112,9 @@ class TestTriggers:
         assert strip_speaker_prefix("ciao", names) == "ciao"
 
 
-class TestAfk:
+class TestVoicePresence:
     def test_away_when_headphones_or_mic_off(self) -> None:
         assert not is_away(VoiceFlags())
         assert is_away(VoiceFlags(self_deaf=True))
         assert is_away(VoiceFlags(self_mute=True))
         assert is_away(VoiceFlags(mute=True))
-
-    def test_due_after_threshold(self) -> None:
-        assert not is_due(None, 1000, 300)
-        assert not is_due(800, 1000, 300)
-        assert is_due(600, 1000, 300)
-        assert not is_due(0, 1000, 0)  # 0 disables the feature
