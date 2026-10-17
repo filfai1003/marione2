@@ -408,3 +408,8 @@ class TestSession:
         assert session.loads(token, "") == {}
         old = session.dumps({"uid": "5"}, "k", now=time.time() - session.MAX_AGE_SECONDS - 10)
         assert session.loads(old, "k") == {}
+
+
+async def test_webp_artwork_is_served_as_an_image(c: Client) -> None:
+    r = await c.get("/img/cards/it/7d.webp")
+    assert r.status == 200 and r.content_type == "image/webp"
