@@ -22,6 +22,7 @@ from marione.bot.music import MusicPlayer
 from marione.config import Settings
 from marione.db.memory import Fact
 from marione.db.pool import Pool, create_pool, migrate
+from marione.games.tables import GameHall
 from marione.ports import GuildMember, PlayOutcome
 from marione.web import app as web_app
 from marione.web.deps import WebDeps
@@ -251,16 +252,25 @@ async def serve(pool: Pool, port: int) -> None:
     music = MusicPlayer(
         FakeVoice(), services.ytdl, services.music, services.settings, source_factory=fake_source
     )
-    deps = WebDeps(services, guild, dev_user_id=ME, music=music)
+    hall = GameHall(services.games)
+    deps = WebDeps(services, guild, dev_user_id=ME, music=music, games=hall)
 
     async def database_ok() -> bool:
         return True
 
     runner = await web_app.start(web_app.create_app(deps, database_ok, lambda: True), port)
     logger.info("Marione preview: http://127.0.0.1:%d (signed in as Giulia, admin)", port)
+
+    async def tick() -> None:
+        while True:
+            await asyncio.sleep(5)
+            await hall.tick()
+
+    ticker = asyncio.create_task(tick())
     try:
         await asyncio.Event().wait()
     finally:
+        ticker.cancel()
         await runner.cleanup()
         await deps.http.aclose()
 

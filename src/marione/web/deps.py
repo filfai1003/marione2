@@ -5,6 +5,7 @@ import httpx
 from marione.bot.context import Services
 from marione.bot.music import MusicPlayer
 from marione.domain.limits import PlayLimiter
+from marione.games.tables import GameHall
 from marione.llm.catalog import ModelCatalog
 from marione.ports import GuildView
 
@@ -20,6 +21,7 @@ class WebDeps:
     limiter: PlayLimiter = field(default_factory=lambda: PlayLimiter(40, 60))
     catalog: ModelCatalog | None = None
     music: MusicPlayer | None = None
+    games: GameHall | None = None
 
     def models(self) -> ModelCatalog:
         if self.catalog is None:

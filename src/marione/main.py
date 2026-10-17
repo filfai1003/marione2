@@ -17,6 +17,7 @@ from marione.bot.music import MusicPlayer
 from marione.bot.voice import VoicePlayer, music_source
 from marione.config import load_settings
 from marione.db.pool import Pool, create_pool, migrate
+from marione.games.tables import GameHall
 from marione.web import app as web_app
 from marione.web.deps import WebDeps
 
@@ -60,11 +61,26 @@ async def run_bot(services: Services) -> int:
     music = MusicPlayer(
         voice, services.ytdl, services.music, services.settings, source_factory=music_source
     )
+    refunded = await services.games.refund_leftovers()
+    if refunded:
+        logger.info("Games: gave back the coins of %d matches cut short by the restart.", refunded)
+    hall = GameHall(services.games)
     deps = WebDeps(
         services,
         DiscordGuildView(guild, voice, services.config.announce_channel_id),
         music=music,
+        games=hall,
     )
+
+    async def tick_games() -> None:
+        while True:
+            await asyncio.sleep(5)
+            try:
+                await hall.tick()
+            except (asyncpg.PostgresError, OSError) as exc:
+                logger.warning("games housekeeping failed: %r", exc)
+
+    ticker = asyncio.create_task(tick_games())
     runner = await web_app.start(
         web_app.create_app(
             deps,
@@ -120,6 +136,8 @@ async def run_bot(services: Services) -> int:
                     await asyncio.wait_for(stopping.wait(), policy.delay)
         return 0
     finally:
+        ticker.cancel()
+        await hall.shutdown()  # coins still in play go back to their owners
         await runner.cleanup()
         await deps.http.aclose()
 

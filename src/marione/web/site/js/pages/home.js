@@ -2,6 +2,7 @@ import { h, fmt, region } from '../util.js';
 import { store } from '../store.js';
 import { t } from '../i18n.js';
 import { card, cardTitle, pageHead, tierBadge, progress, historyList, notice } from '../ui.js';
+import { icon } from '../art.js';
 
 export function mount(root) {
   const R = { greet: h('div'), main: h('div'), quick: h('div'), hist: h('div') };
@@ -30,13 +31,13 @@ export function mount(root) {
 
   function quick(s) {
     const m = s.modules;
-    const q = (href, emoji, title, sub, cls = '') => h('a', { class: 'quick ' + cls, href },
-      h('span', { class: 'q-emoji', 'aria-hidden': 'true' }, emoji), h('span', null, h('strong', null, title), h('small', null, sub)));
+    const q = (href, ico, title, sub, cls = '') => h('a', { class: 'quick ' + cls, href },
+      h('span', { class: 'q-ico' }, icon(ico, 56)), h('span', null, h('strong', null, title), h('small', null, sub)));
     return h('div', { class: 'grid g-quick' },
-      m.economy ? q('#/economy/send', '💸', t('home.qSend'), t('home.qSendSub')) : null,
-      m.economy && m.rob ? q('#/economy/heist', '🦹', t('home.qRob'), t('home.qRobSub'), 'danger') : null,
-      m.soundboard ? q('#/soundboard', '🔊', t('home.qBoard'), t('home.qBoardSub'), 'green') : null,
-      m.music ? q('#/music', '🎵', t('home.qMusic'), t('home.qMusicSub')) : null);
+      m.economy && m.games ? q('#/games', 'games', t('home.qGames'), t('home.qGamesSub')) : null,
+      m.economy ? q('#/economy/send', 'economy', t('home.qSend'), t('home.qSendSub')) : null,
+      m.soundboard ? q('#/soundboard', 'soundboard', t('home.qBoard'), t('home.qBoardSub')) : null,
+      m.music ? q('#/music', 'music', t('home.qMusic'), t('home.qMusicSub')) : null);
   }
 
   function update() {

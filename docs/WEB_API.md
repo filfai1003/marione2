@@ -80,10 +80,10 @@ Liste paginate (mai liste infinite): `offset` (da 0) e `limit` (1–50, predefin
 ## Soundboard (libreria condivisa del server)
 
 `GET /api/soundboard/list` → `{"ok":true,"sounds":[…],"volume":80}` (preferiti per primi, poi per nome).
-`GET /api/soundboard/audio?id=7` → il file audio.
+`GET /api/soundboard/audio?id=7` → il file audio (`&download=1` lo manda come allegato col nome del suono; chiunque).
 `POST /api/soundboard/play` `{"id":"7"}`; `stop` `{}`; `volume` `{"percent":80}`; `favorite` `{"id":"7"}` (toggle).
 `POST /api/soundboard/add` multipart: `name` (1–40), `emoji` (opzionale), `file` (mp3/wav/ogg, ≤ 8 MB, ≤ 30 s). Tutti possono aggiungere.
-`POST /api/soundboard/rename` `{"id":"7","name":"Nuovo","emoji":"🎺"}` — il creatore o un admin.
+`POST /api/soundboard/rename` `{"id":"7","name":"Nuovo","emoji":"🎺"}` — solo admin (nome e icona).
 `POST /api/soundboard/remove` `{"id":"7"}` — **solo admin** (altrimenti `forbidden`).
 
 ## Musica
@@ -148,3 +148,14 @@ Nel dettaglio membro c'è anche `"habits": ["right now: online, playing Minecraf
 ## Statici
 
 `GET /` → `index.html` (SPA), `GET /health` → 200/503 (usato da Railway).
+
+## Giochi
+
+Serve l'economia accesa e la funzione `games`. Tutto passa dal registro (`game_bet`, `game_win`, `game_refund`); le poste in gioco sono in `game_escrow` e tornano ai proprietari se il server si riavvia a metà partita.
+
+- `GET /api/games` → `{"games":[{"key","economy":"stake|bets","house":bool,"modes":[{"key","seats","teams"}]}], "tables":[{"id","game","mode","stake","status","seats","free","humans"}] (aperti in attesa + i tuoi), "you", "stats":[{"game","played","won","net"}], "top":[{"userId","name","net"}] (7 giorni), "enabled"}`.
+- `POST /api/games/create` `{"game","mode","stake","bots":bool,"options":{"level"|"target"|"hands"}}` → `{"table": vista}`. Con `bots:true` (o modalità da 1 posto) la partita parte subito. Massimo 3 tavoli a testa: il più vecchio giocato da solo coi bot si chiude da sé.
+- `POST /api/games/join|leave|start|bot|kick|act` con `{"tableId", …}` (`seat` per join/kick, `action` per act) → `{"table": vista}` (`leave` → `{"ok":true}`). Nei giochi contro il banco, un'azione a round finito fa partire il round successivo.
+- `GET /api/games/table?id=…&v=<versione>` → risponde appena la versione cambia (al massimo ~25 s); senza `v` risponde subito.
+- Vista del tavolo: `{"id","game","mode","teams","stake","status":"waiting|playing|over|closed","round","version","owner","you":posto|null,"seats":[{"name","bot","auto","userId"}|null],"toAct":[posti],"legal":[azioni],"state":<vista del gioco per te>,"log":[…],"result":{…,"nets":{userId:netto}}|null,"turnLeft":s|null}`. Le forme di `state` e delle azioni sono documentate in ogni motore `src/marione/games/<gioco>.py`.
+- Errori: `not_found` 404, `forbidden` 403, `illegal`/`not_your_turn`/`insufficient_funds`/`table_full`… 409, `too_many_tables`/`too_many_yours` 429.

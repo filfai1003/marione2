@@ -1,0 +1,139 @@
+/* poker game renderer styles (texas, poker5) — every class is prefixed pk- */
+.pk-wrap { display: grid; gap: 14px; }
+
+/* ---- the table: wooden rail, felt, seats around ---- */
+.pk-table { position: relative; width: 100%; aspect-ratio: 2 / 1; min-height: 430px; max-height: 620px; margin: 0 auto; color: #fff8e7; }
+.pk-rail { position: absolute; inset: 9% 5%; border-radius: 50%; border: 3px solid var(--line);
+  background: linear-gradient(180deg, var(--legno-400), var(--legno-600)); box-shadow: 0 6px 0 var(--shadow-ink), inset 0 2px 0 rgba(255, 255, 255, .25); padding: 16px; }
+.pk-felt { width: 100%; height: 100%; border-radius: 50%; border: 3px solid var(--line);
+  background: radial-gradient(ellipse at 50% 45%, #33995a 0%, #23753f 58%, #185a2e 100%);
+  box-shadow: inset 0 0 50px rgba(0, 0, 0, .35), inset 0 0 0 7px rgba(255, 248, 231, .08); position: relative; }
+.pk-felt::after { content: ""; position: absolute; inset: 10% 8%; border-radius: 50%; border: 2px dashed rgba(255, 248, 231, .16); }
+[data-theme="dark"] .pk-rail { background: linear-gradient(180deg, var(--legno-500), var(--legno-700)); box-shadow: 0 6px 0 #000, inset 0 2px 0 rgba(255, 255, 255, .12); }
+[data-theme="dark"] .pk-felt { background: radial-gradient(ellipse at 50% 45%, #25764a 0%, #185a31 58%, #0f4122 100%); }
+
+/* the middle */
+.pk-mid { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: grid; justify-items: center; gap: 8px; z-index: 1; }
+.pk-phase { font: 700 .95rem var(--font-display); padding: 3px 14px; border-radius: var(--radius-pill); background: rgba(0, 0, 0, .3); white-space: nowrap; }
+.pk-phase small { font-weight: 700; opacity: .8; }
+.pk-board { display: flex; gap: 6px; min-height: 114px; align-items: center; }
+.pk-board.draw { min-height: 80px; }
+.pk-slot { width: 76px; height: 114px; border-radius: 9%/6%; border: 2px dashed rgba(255, 248, 231, .28); background: rgba(0, 0, 0, .1); }
+.pk-pot { display: flex; align-items: center; gap: 8px; padding: 4px 14px 4px 8px; border-radius: var(--radius-pill); background: rgba(0, 0, 0, .35); border: 2px solid rgba(233, 180, 32, .6); }
+.pk-pot span { display: grid; line-height: 1.1; } .pk-pot small { font: 800 .7rem var(--font-body); text-transform: uppercase; letter-spacing: .08em; opacity: .85; }
+.pk-pot b { font: 700 1.15rem var(--font-display); color: var(--oro-200); font-variant-numeric: tabular-nums; }
+.pk-pot.paid { opacity: .7; }
+
+/* chips */
+.pk-chips { display: inline-flex; flex-direction: column-reverse; align-items: center; }
+.pk-chips i { display: block; width: 22px; height: 8px; border-radius: 50%; border: 1.5px solid #241f14; margin-top: -3px;
+  background: repeating-linear-gradient(90deg, var(--c1) 0 4px, #fff8e7 4px 6px); box-shadow: 0 1px 0 rgba(0, 0, 0, .35); }
+.pk-chips i.c0 { --c1: var(--pomodoro-500); } .pk-chips i.c1 { --c1: var(--basilico-500); } .pk-chips i.c2 { --c1: var(--oro-400); }
+
+/* bets in front of the seats */
+.pk-bet { position: absolute; left: calc(var(--x) * 1%); top: calc(var(--y) * 1%); transform: translate(-50%, -50%); z-index: 2;
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px 2px 4px; border-radius: var(--radius-pill); background: rgba(0, 0, 0, .35); }
+.pk-amt { font: 700 .9rem var(--font-display); color: var(--oro-200); font-variant-numeric: tabular-nums; }
+.pk-bet.new { animation: pk-slide var(--dur-slow) var(--ease-bounce); }
+
+/* seats */
+.pk-seat { position: absolute; z-index: 3; left: clamp(70px, calc(var(--x) * 1%), calc(100% - 70px)); top: clamp(30px, calc(var(--y) * 1%), calc(100% - 30px));
+  transform: translate(-50%, calc(var(--pod-h) / -2)); display: flex; flex-direction: column; align-items: center; gap: 4px; --pod-h: 48px; }
+.pk-seat.low { flex-direction: column-reverse; transform: translate(-50%, calc(-100% + var(--pod-h) / 2)); }
+.pk-pod { position: relative; display: flex; align-items: center; gap: 8px; min-width: 140px; max-width: 180px; padding: 5px 12px 5px 5px; border: 2.5px solid var(--line);
+  border-radius: var(--radius-pill); background: var(--surface); color: var(--ink); box-shadow: 0 3px 0 var(--shadow-ink); padding-right: 18px; transition: box-shadow var(--dur-base), transform var(--dur-base); }
+[data-theme="dark"] .pk-pod { box-shadow: 0 3px 0 #000, 0 0 0 1px var(--surface-hair); }
+.pk-av { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--pomodoro-500); color: #fff; font: 700 1rem var(--font-display); border: 2px solid var(--line); }
+.pk-seat.me .pk-av { background: var(--basilico-500); }
+.pk-who { display: grid; min-width: 0; line-height: 1.15; }
+.pk-who strong { font: 700 .92rem var(--font-display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pk-who strong small { color: var(--ink-muted); font-weight: 700; }
+.pk-status { font-weight: 800; font-size: .75rem; color: var(--ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 1.1em; }
+.pk-seat.turn .pk-pod { box-shadow: 0 0 0 4px var(--oro-400), 0 3px 0 var(--shadow-ink); animation: pk-pulse 1.4s var(--ease-in-out) infinite; }
+.pk-seat.folded .pk-pod { background: var(--surface-2); color: var(--ink-muted); border-color: var(--surface-hair); box-shadow: none; }
+.pk-seat.folded .pk-av { filter: grayscale(1); opacity: .6; }
+.pk-seat.winner .pk-pod { background: var(--oro-300); color: var(--oliva-900); box-shadow: 0 0 0 4px var(--oro-200), 0 0 22px var(--oro-400); }
+.pk-seat.winner .pk-status, .pk-seat.winner .pk-who strong small { color: var(--oliva-900); }
+.pk-dealer { position: absolute; right: -10px; top: -10px; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
+  background: #fff8e7; color: #241f14; border: 2px solid #241f14; font: 800 .8rem var(--font-display); box-shadow: 0 2px 0 rgba(0, 0, 0, .35); }
+.pk-cards { display: flex; } .pk-cards .pcard + .pcard { margin-left: -12px; }
+.pk-cards.shown .pcard + .pcard { margin-left: -22px; }
+.pk-cards.flip .pcard { animation: pk-flip var(--dur-slow) var(--ease-out) both; }
+.pk-cards.flip .pcard:nth-child(2) { animation-delay: 60ms; } .pk-cards.flip .pcard:nth-child(3) { animation-delay: 120ms; }
+.pk-cards.flip .pcard:nth-child(4) { animation-delay: 180ms; } .pk-cards.flip .pcard:nth-child(5) { animation-delay: 240ms; }
+.pk-rank { font: 700 .8rem var(--font-display); padding: 1px 10px; border-radius: var(--radius-pill); background: rgba(0, 0, 0, .55); color: #fff8e7; white-space: nowrap; }
+.pk-rank.win { background: var(--oro-400); color: var(--oliva-900); border: 2px solid #241f14; }
+.pk-won { font: 700 1rem var(--font-display); color: var(--oliva-900); background: var(--oro-300); border: 2px solid #241f14; padding: 1px 10px; border-radius: var(--radius-pill);
+  animation: pk-coin var(--dur-bounce) var(--ease-bounce) both; white-space: nowrap; }
+
+/* highlighted best five / the rest dimmed */
+.pcard.pk-best img { box-shadow: 0 0 0 3px var(--oro-400), 0 4px 10px rgba(0, 0, 0, .4); }
+.pcard.pk-dim img { filter: brightness(.6) saturate(.5); }
+.pcard.pk-deal { animation: pk-deal var(--dur-slow) var(--ease-bounce) both; }
+
+/* ---- your hand ---- */
+.pk-me { display: grid; justify-items: center; gap: 6px; }
+.pk-me.folded .pk-hand { opacity: .5; filter: grayscale(.5); }
+.pk-hand { display: flex; justify-content: center; gap: 8px; padding-top: 18px; flex-wrap: nowrap; }
+.pk-hand .pcard.pk-deal:nth-child(2) { animation-delay: 70ms; } .pk-hand .pcard.pk-deal:nth-child(3) { animation-delay: 140ms; }
+.pk-hand .pcard.pk-deal:nth-child(4) { animation-delay: 210ms; } .pk-hand .pcard.pk-deal:nth-child(5) { animation-delay: 280ms; }
+.pk-hand.picking .pcard { cursor: pointer; }
+.pk-outwrap { position: relative; display: inline-block; }
+.pk-outwrap .pcard.sel img { box-shadow: 0 0 0 3px var(--pomodoro-500), 0 6px 12px rgba(0, 0, 0, .35); filter: brightness(.75); }
+.pk-outtag { position: absolute; left: 50%; top: 2px; transform: translate(-50%, 0) rotate(-6deg); pointer-events: none; padding: 1px 8px; border-radius: var(--radius-pill);
+  background: var(--pomodoro-500); color: #fff; border: 2px solid #241f14; font: 700 .78rem var(--font-display); white-space: nowrap; }
+.pk-handname { display: flex; gap: 8px; align-items: baseline; padding: 4px 16px; border-radius: var(--radius-pill); background: var(--surface); border: 2.5px solid var(--line); color: var(--ink); }
+.pk-handname small { font-weight: 800; color: var(--ink-muted); } .pk-handname b { font: 700 1.1rem var(--font-display); }
+.pk-handname.win { background: var(--oro-300); color: var(--oliva-900); } .pk-handname.win small { color: var(--oliva-900); }
+.pk-wait { font-weight: 800; color: var(--ink-muted); text-align: center; padding: 10px; }
+
+/* ---- the action bar ---- */
+.pk-actions { display: grid; justify-items: center; gap: 8px; padding: 12px; border: 3px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); box-shadow: 0 4px 0 var(--shadow-ink); }
+.pk-actions.pop { animation: mar-pop var(--dur-bounce) var(--ease-bounce); }
+[data-theme="dark"] .pk-actions { box-shadow: 0 4px 0 #000, 0 0 0 1px var(--surface-hair); }
+.pk-info { font-weight: 800; color: var(--ink-muted); text-align: center; }
+.pk-btns { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.pk-act { min-width: 140px; min-height: 50px; }
+
+/* ---- result ---- */
+.pk-result { display: grid; justify-items: center; gap: 4px; padding: 10px 14px; border-radius: var(--radius-lg); background: var(--highlight-gold, var(--oro-100)); border: 3px solid var(--line); color: var(--ink); text-align: center; animation: mar-pop var(--dur-bounce) var(--ease-bounce); }
+.pk-result b { font-family: var(--font-display); }
+.pk-split { font: 700 1.05rem var(--font-display); }
+
+@keyframes pk-deal { from { transform: translateY(-30px) rotate(-8deg) scale(.8); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes pk-flip { from { transform: rotateY(90deg); } to { transform: none; } }
+@keyframes pk-slide { from { transform: translate(-50%, -50%) scale(.4); opacity: 0; } to { transform: translate(-50%, -50%); opacity: 1; } }
+@keyframes pk-coin { 0% { transform: translateY(-14px) scale(.6); opacity: 0; } 100% { transform: none; opacity: 1; } }
+@keyframes pk-pulse { 0%, 100% { box-shadow: 0 0 0 4px var(--oro-400), 0 3px 0 var(--shadow-ink); } 50% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--oro-400) 55%, transparent), 0 3px 0 var(--shadow-ink); } }
+
+/* ---- phones ---- */
+@media (max-width: 799px) {
+  .pk-wrap { gap: 10px; }
+  .pk-table { aspect-ratio: 4 / 5; min-height: 0; max-height: none; }
+  .pk-rail { inset: 7% 4%; padding: 9px; }
+  .pk-board { gap: 3px; min-height: 51px; }
+  .pk-board .pcard, .pk-slot { width: 34px; height: 51px; }
+  .pk-board.draw .pcard.sm { width: 34px; height: 51px; }
+  .pk-phase { font-size: .78rem; padding: 2px 10px; } .pk-phase small { display: none; }
+  .pk-pot { padding: 2px 10px 2px 6px; } .pk-pot b { font-size: .95rem; } .pk-pot small { font-size: .6rem; }
+  .pk-chips i { width: 16px; height: 6px; margin-top: -2px; }
+  .pk-amt { font-size: .78rem; }
+  .pk-seat { left: clamp(40px, calc(var(--x) * 1%), calc(100% - 40px)); top: clamp(22px, calc(var(--y) * 1%), calc(100% - 22px)); gap: 2px; --pod-h: 38px; }
+  .pk-pod { min-width: 0; width: 80px; max-width: 80px; flex-direction: column; gap: 0; padding: 3px 4px; border-radius: 14px; text-align: center; border-width: 2px; }
+  .pk-av { width: 22px; height: 22px; font-size: .74rem; position: absolute; left: -10px; top: -14px; border-width: 1.5px; }
+  .pk-who { width: 100%; } .pk-who strong { font-size: .74rem; } .pk-who strong small { display: none; } .pk-status { font-size: .64rem; }
+  .pk-seat.me .pk-pod { width: 110px; max-width: 110px; }
+  .pk-dealer { width: 20px; height: 20px; font-size: .66rem; right: -8px; top: -8px; }
+  .pk-cards .pcard.xs { width: 16px; height: 24px; } .pk-cards .pcard + .pcard { margin-left: -8px; }
+  .pk-cards.shown .pcard.sm { width: 28px; height: 42px; } .pk-cards.shown .pcard + .pcard { margin-left: -12px; }
+  .pk-rank { font-size: .64rem; padding: 0 6px; }
+  .pk-won { font-size: .78rem; padding: 0 6px; }
+  .pk-hand { gap: 4px; padding-top: 14px; }
+  .draw5 ~ .pk-me .pk-hand .pcard.lg { width: 62px; height: 93px; }
+  .pk-act { min-width: 0; flex: 1 1 100px; min-height: 48px; padding: 8px 12px; font-size: .95rem; }
+  .pk-btns { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pk-seat.turn .pk-pod, .pk-cards.flip .pcard, .pcard.pk-deal, .pk-bet.new, .pk-won { animation: none; }
+}

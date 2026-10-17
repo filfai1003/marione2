@@ -152,6 +152,7 @@ class TestState:
             "rob": True,
             "agent": True,
             "habits": True,
+            "games": True,
         }
         assert len(data["roles"]) == 12 and data["inVoice"] and data["voiceChannel"] == "Sala"
         assert data["me"]["id"] == str(ANNA) and data["me"]["isAdmin"] is False
@@ -258,11 +259,17 @@ class TestSoundboard:
             await c.post("/api/soundboard/stop", json={})
         ).status == 200 and h.guild.stopped == 1
 
+        # Anyone may download a sound; only administrators rename it or change its icon.
+        dl = await c.get(f"/api/soundboard/audio?id={added['id']}&download=1")
+        assert dl.status == 200
+        assert dl.headers["Content-Disposition"] == 'attachment; filename="Beep.wav"'
         ren = await c.post("/api/soundboard/rename", json={"id": added["id"], "name": "Bip"})
-        assert ren.status == 200
+        assert ren.status == 403
         # Only administrators delete, even the creator cannot.
         assert (await c.post("/api/soundboard/remove", json={"id": added["id"]})).status == 403
         async for admin in client(h, ADMIN):
+            ok = await admin.post("/api/soundboard/rename", json={"id": added["id"], "name": "Bip"})
+            assert ok.status == 200
             assert (
                 await admin.post("/api/soundboard/remove", json={"id": added["id"]})
             ).status == 200

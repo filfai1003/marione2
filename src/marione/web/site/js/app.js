@@ -16,18 +16,21 @@ import * as entrances from './pages/entrances.js';
 import * as brain from './pages/brain.js';
 import * as settings from './pages/settings.js';
 import * as admin from './pages/admin.js';
+import * as games from './pages/games.js';
+import { icon } from './art.js';
 
-// Order = sidebar order. The four everyday pages are also the phone's bottom tabs; admins get a fifth
-// tab, "Admin", a hub that leads to the admin pages (each tab opens a page, never a menu).
+// Order = sidebar order. The five everyday pages are also the phone's bottom tabs (each tab opens a
+// page, never a menu); on phones admins reach the Admin hub from the account menu.
 const PAGES = {
-  home: { emoji: '🏠', mod: home },
-  economy: { emoji: '💰', mod: economy },
-  soundboard: { emoji: '🔊', mod: soundboard },
-  music: { emoji: '🎵', mod: music },
-  admin: { emoji: '🛠️', mod: admin, admin: true, hub: true },
-  entrances: { emoji: '🎺', mod: entrances, admin: true },
-  brain: { emoji: '🧠', mod: brain, admin: true },
-  settings: { emoji: '⚙️', mod: settings, admin: true },
+  home: { icon: 'home', mod: home },
+  economy: { icon: 'economy', mod: economy },
+  games: { icon: 'games', mod: games },
+  soundboard: { icon: 'soundboard', mod: soundboard },
+  music: { icon: 'music', mod: music },
+  admin: { icon: 'admin', mod: admin, admin: true, hub: true },
+  entrances: { icon: 'entrances', mod: entrances, admin: true },
+  brain: { icon: 'brain', mod: brain, admin: true },
+  settings: { icon: 'settings', mod: settings, admin: true },
 };
 const root = document.getElementById('root');
 let shell = null, current = null, currentKey = null;
@@ -64,6 +67,7 @@ function openAccount(anchor) {
     h('div', { class: 'menu-head' }, avatar(me, 40), h('span', null, h('strong', null, me.name),
       me.isAdmin ? h('small', null, t('nav.admin')) : null)),
     h('label', { class: 'menu-row' }, h('span', null, '🌍 ' + t('lang.label')), langPicker()),
+    me.isAdmin ? ['🛠️', t('nav.adminTools'), () => { location.hash = '#/admin'; }, 'mobile-only-item'] : null,
     ['🎨', dark ? t('theme.light') : t('theme.dark'), toggleTheme],
     ['🚪', t('nav.logout'), () => { location.href = '/auth/logout'; }, 'danger'],
   ], 'account-menu');
@@ -91,7 +95,7 @@ const label = (k) => t('nav.' + k);
 
 function navLink(k, p, cls = 'nav-item') {
   return h('a', { class: cls, href: '#/' + k, 'data-k': k },
-    h('span', { class: 'nav-emoji', 'aria-hidden': 'true' }, p.emoji), h('span', { class: 'nav-label' }, label(k)));
+    h('span', { class: 'nav-emoji' }, icon(p.icon, 30)), h('span', { class: 'nav-label' }, label(k)));
 }
 
 function buildShell() {
@@ -107,7 +111,7 @@ function buildShell() {
     h('div', { class: 'nav-foot' }, h('span', { class: 'script' }, t('nav.bonappetit'))));
   // Bottom tabs (phones).
   const tabbar = h('nav', { class: 'tabbar', 'aria-label': t('nav.sections') },
-    entries.filter(([, p]) => !p.admin || p.hub).map(([k, p]) => navLink(k, p, 'tab-item')));
+    entries.filter(([, p]) => !p.admin).map(([k, p]) => navLink(k, p, 'tab-item')));
   const voice = h('span', { class: 'pill voice' }), coin = h('span', { class: 'coin-val' });
   const offline = h('span', { class: 'offline', title: t('common.offline'), role: 'status', hidden: true });
   const av = h('span', { class: 'me-av' });
@@ -155,7 +159,7 @@ function syncShell() {
 // ---------- router: #/page[/sub] ----------
 function route() {
   if (store.view !== 'app' || !shell) return;
-  const [, key0, sub] = location.hash.match(/^#\/([a-z]+)(?:\/([a-z-]+))?/) || [];
+  const [, key0, sub] = location.hash.match(/^#\/([a-z]+)(?:\/([a-z0-9-]+))?/) || [];
   let key = key0;
   if (!PAGES[key] || !visible(PAGES[key])) {
     if (key !== 'home') location.replace('#/home');
@@ -173,7 +177,7 @@ function route() {
     holder.append(h('a', { class: 'crumb mobile-only', href: '#/admin' }, '‹ ' + t('nav.admin')));
   }
   current = PAGES[key].mod.mount(holder, sub);
-  const tabKey = PAGES[key].admin ? 'admin' : key;
+  const tabKey = key;
   shell.nav.querySelectorAll('[data-k]').forEach((a) => {
     if (a.dataset.k === key) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });

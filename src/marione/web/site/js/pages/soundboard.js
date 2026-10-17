@@ -87,6 +87,10 @@ export function mount(root) {
     [preview.key() === 'b' + s.id ? '⏸' : '🎧', preview.key() === 'b' + s.id ? t('board.stopPreview') : t('board.listenHere'),
       () => preview.toggle('b' + s.id, '/api/soundboard/audio?id=' + encodeURIComponent(s.id), () => toast(t('board.noPreview'), 'err'))],
     [s.fav ? '★' : '☆', s.fav ? t('board.unfav') : t('board.fav'), () => toggleFav(s, anchor)],
+    ['⬇️', t('board.download'), () => {
+      const a = h('a', { href: '/api/soundboard/audio?download=1&id=' + encodeURIComponent(s.id), download: '' });
+      document.body.append(a); a.click(); a.remove();
+    }],
     canEdit ? ['✏️', t('board.edit'), () => rename(s)] : null,
     canDelete ? ['🗑', t('common.delete'), () => remove(s), 'danger'] : null,
   ]);
@@ -124,7 +128,7 @@ export function mount(root) {
     region(grid, JSON.stringify([list, admin, filter, query, sort, preview.key(), t('board.fAll')]), () => {
       if (!all.length) return empty('🔇', t('board.empty'));
       if (!list.length) return empty('🔎', t('board.noMatch'));
-      const tiles = (xs) => h('div', { class: 'tiles' }, xs.map((x) => tile(x, x.own || admin, admin)));
+      const tiles = (xs) => h('div', { class: 'tiles' }, xs.map((x) => tile(x, admin, admin)));
       // Without search or filter: favourites as their own row, then everything else.
       if (filter === 'all' && !query) {
         const favs = list.filter((x) => x.fav), rest = list.filter((x) => !x.fav);

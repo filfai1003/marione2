@@ -5,7 +5,7 @@ from pathlib import Path
 
 from aiohttp import web
 
-from marione.web import api
+from marione.web import api, games_api
 from marione.web.deps import WebDeps
 
 SITE = Path(__file__).parent / "site"
@@ -62,6 +62,7 @@ def create_app(
 
     app.router.add_get("/health", health)
     api.add_routes(app)
+    games_api.add_routes(app)
     app.router.add_get("/", index)
     app.router.add_static("/", SITE, show_index=False)
     return app

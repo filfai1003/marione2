@@ -401,12 +401,22 @@ async def board_list(request: web.Request) -> web.Response:
     )
 
 
-def _audio_response(content_type: str, data: bytes) -> web.Response:
-    return web.Response(
-        body=data,
-        content_type=content_type,
-        headers={"Cache-Control": "private, max-age=300", "X-Content-Type-Options": "nosniff"},
-    )
+_EXTENSIONS = {"audio/mpeg": "mp3", "audio/wav": "wav", "audio/x-wav": "wav", "audio/ogg": "ogg"}
+
+
+def _download_name(name: str, content_type: str) -> str:
+    """A safe file name for a download: letters, digits, spaces and dashes only."""
+    kept = (c for c in name if (c.isascii() and c.isalnum()) or c in " -_")
+    base = "".join(kept).strip() or "sound"
+    return f"{base[:60]}.{_EXTENSIONS.get(content_type, 'mp3')}"
+
+
+def _audio_response(content_type: str, data: bytes, download: str | None = None) -> web.Response:
+    headers = {"Cache-Control": "private, max-age=300", "X-Content-Type-Options": "nosniff"}
+    if download:
+        quoted = download.replace('"', "")
+        headers["Content-Disposition"] = f'attachment; filename="{quoted}"'
+    return web.Response(body=data, content_type=content_type, headers=headers)
 
 
 async def board_audio(request: web.Request) -> web.Response:
@@ -414,10 +424,15 @@ async def board_audio(request: web.Request) -> web.Response:
     if err:
         return err
     sound_id = _int(request.query.get("id"))
-    audio = await _deps(request).services.soundboard.audio(sound_id) if sound_id else None
+    board = _deps(request).services.soundboard
+    audio = await board.audio(sound_id) if sound_id else None
     if audio is None:
         return fail(404, "not_found", t("sound_not_found", who.lang))
-    return _audio_response(audio.content_type, audio.data)
+    download = None
+    if request.query.get("download") == "1":  # anyone may download a board sound
+        sound = await board.get(sound_id) if sound_id else None
+        download = _download_name(sound.name if sound else "sound", audio.content_type)
+    return _audio_response(audio.content_type, audio.data, download)
 
 
 async def board_play(request: web.Request) -> web.Response:
@@ -544,7 +559,7 @@ async def board_add(request: web.Request) -> web.Response:
 
 
 async def board_rename(request: web.Request) -> web.Response:
-    who, err = await _auth(request)
+    who, err = await _auth(request, admin=True)  # only administrators rename or change the icon
     if err:
         return err
     body = await _json(request)
@@ -553,8 +568,6 @@ async def board_rename(request: web.Request) -> web.Response:
     sound = await svc.soundboard.get(sound_id) if sound_id else None
     if sound is None:
         return fail(404, "not_found", t("sound_not_found", who.lang))
-    if not svc.sound_service.may_modify(sound, who.id, is_admin=who.member.is_admin):
-        return fail(403, "forbidden", t("own_sounds_only", who.lang))
     emoji = body.get("emoji")
     try:
         await svc.soundboard.rename(

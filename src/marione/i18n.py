@@ -384,6 +384,84 @@ M: Final[dict[str, dict[str, str]]] = {
         "it": "Operazione annullata",
         "fr": "Opération annulée",
     },
+    "r.game_bet": {
+        "en": "Bet at the games table",
+        "it": "Puntata ai giochi",
+        "fr": "Mise aux jeux",
+    },
+    "r.game_win": {"en": "Won at the games table", "it": "Vinto ai giochi", "fr": "Gagné aux jeux"},
+    "r.game_refund": {
+        "en": "Games: stake returned",
+        "it": "Giochi: posta restituita",
+        "fr": "Jeux : mise rendue",
+    },
+    "game.not_found": {
+        "en": "That table is gone.",
+        "it": "Quel tavolo non c'è più.",
+        "fr": "Cette table n'existe plus.",
+    },
+    "game.forbidden": {
+        "en": "You can't do that at this table.",
+        "it": "Non puoi farlo a questo tavolo.",
+        "fr": "Tu ne peux pas faire ça à cette table.",
+    },
+    "game.unknown_game": {"en": "Unknown game.", "it": "Gioco sconosciuto.", "fr": "Jeu inconnu."},
+    "game.unknown_mode": {
+        "en": "Unknown mode for this game.",
+        "it": "Modalità sconosciuta per questo gioco.",
+        "fr": "Mode inconnu pour ce jeu.",
+    },
+    "game.bad_stake": {"en": "Invalid stake.", "it": "Posta non valida.", "fr": "Mise invalide."},
+    "game.illegal": {
+        "en": "That move isn't allowed.",
+        "it": "Mossa non consentita.",
+        "fr": "Coup non autorisé.",
+    },
+    "game.not_your_turn": {
+        "en": "It's not your turn.",
+        "it": "Non è il tuo turno.",
+        "fr": "Ce n'est pas ton tour.",
+    },
+    "game.not_playing": {
+        "en": "The match isn't running.",
+        "it": "La partita non è in corso.",
+        "fr": "La partie n'est pas en cours.",
+    },
+    "game.already_started": {
+        "en": "The match has already started.",
+        "it": "La partita è già iniziata.",
+        "fr": "La partie a déjà commencé.",
+    },
+    "game.table_full": {
+        "en": "The table is full.",
+        "it": "Il tavolo è pieno.",
+        "fr": "La table est pleine.",
+    },
+    "game.seat_taken": {
+        "en": "That seat is taken.",
+        "it": "Quel posto è occupato.",
+        "fr": "Cette place est prise.",
+    },
+    "game.not_a_bot": {
+        "en": "That seat isn't a bot.",
+        "it": "Quel posto non è un bot.",
+        "fr": "Cette place n'est pas un bot.",
+    },
+    "game.insufficient_funds": {
+        "en": "Not enough Marioncelli.",
+        "it": "Non hai abbastanza Marioncelli.",
+        "fr": "Pas assez de Marioncelli.",
+    },
+    "game.too_many_tables": {
+        "en": "Too many tables open: try later.",
+        "it": "Troppi tavoli aperti: riprova più tardi.",
+        "fr": "Trop de tables ouvertes : réessaie plus tard.",
+    },
+    "game.too_many_yours": {
+        "en": "You're already at 3 tables.",
+        "it": "Sei già seduto a 3 tavoli.",
+        "fr": "Tu es déjà à 3 tables.",
+    },
     "r.legacy_import": {
         "en": "Balance from the old Marione",
         "it": "Saldo dal vecchio Marione",

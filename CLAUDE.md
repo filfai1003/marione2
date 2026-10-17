@@ -12,3 +12,4 @@
 - Il sito (`src/marione/web/`) non importa discord.py: parla con Discord solo tramite `ports.GuildView`. Il contratto con la pagina è `docs/WEB_API.md`: cambiare un endpoint = aggiornare contratto, `site/js/` e test.
 - Le funzioni accendibili sono in `db/settings.py` (`FEATURES`); i ruoli ricchezza sono spenti di default.
 - Mai salvare dati nei messaggi/canali Discord: tutto nel database.
+- Giochi: motori puri in `games/` (un file per gioco, testati con partite intere dei bot), i soldi solo tramite `GameHall` e il registro. Ogni gioco ha il suo renderer in `site/js/games/` e il suo CSS in `site/css/`.
