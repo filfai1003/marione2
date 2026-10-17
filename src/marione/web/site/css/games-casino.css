@@ -301,7 +301,7 @@
   .cas-betlist li { grid-template-columns: minmax(0, 1fr) auto 56px 64px; gap: 6px; font-size: .9rem; }
 
   .cas-bj-felt, .cas-sem-felt { padding: 16px 8px 18px; min-height: 0; }
-  .cas-shoe { right: 8px; top: 8px; } .cas-shoe .pcard.sm { width: 30px; height: 45px; }
+  .cas-shoe { right: 8px; top: 8px; } .cas-shoe .pcard.sm { width: 30px; height: auto; }
   .cas-cards .pcard + .pcard { margin-left: -22px; }
   .cas-cards .pcard.lg + .pcard.lg { margin-left: -26px; }
   .cas-arc { font-size: .72rem; letter-spacing: .05em; padding: 4px 6px; }

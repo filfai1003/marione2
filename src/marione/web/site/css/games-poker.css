@@ -2,7 +2,7 @@
 .pk-wrap { display: grid; gap: 14px; }
 
 /* ---- the table: wooden rail, felt, seats around ---- */
-.pk-table { position: relative; width: 100%; aspect-ratio: 2 / 1; min-height: 430px; max-height: 620px; margin: 0 auto; color: #fff8e7; }
+.pk-table { position: relative; width: 100%; aspect-ratio: 2 / 1; min-height: 340px; max-height: min(600px, 47vh); margin: 0 auto; color: #fff8e7; }
 .pk-rail { position: absolute; inset: 9% 5%; border-radius: 50%; border: 3px solid var(--line);
   background: linear-gradient(180deg, var(--legno-400), var(--legno-600)); box-shadow: 0 6px 0 var(--shadow-ink), inset 0 2px 0 rgba(255, 255, 255, .25); padding: 16px; }
 .pk-felt { width: 100%; height: 100%; border-radius: 50%; border: 3px solid var(--line);
@@ -16,9 +16,9 @@
 .pk-mid { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: grid; justify-items: center; gap: 8px; z-index: 1; }
 .pk-phase { font: 700 .95rem var(--font-display); padding: 3px 14px; border-radius: var(--radius-pill); background: rgba(0, 0, 0, .3); white-space: nowrap; }
 .pk-phase small { font-weight: 700; opacity: .8; }
-.pk-board { display: flex; gap: 6px; min-height: 114px; align-items: center; }
+.pk-board { display: flex; gap: 6px; min-height: calc(clamp(76px, 6.8vw, 118px) * 1.5 * var(--card-scale, 1)); align-items: center; }
 .pk-board.draw { min-height: 80px; }
-.pk-slot { width: 76px; height: 114px; border-radius: 9%/6%; border: 2px dashed rgba(255, 248, 231, .28); background: rgba(0, 0, 0, .1); }
+.pk-slot { width: calc(clamp(76px, 6.8vw, 118px) * var(--card-scale, 1)); aspect-ratio: 2 / 3; border-radius: 9%/6%; border: 2px dashed rgba(255, 248, 231, .28); background: rgba(0, 0, 0, .1); }
 .pk-pot { display: flex; align-items: center; gap: 8px; padding: 4px 14px 4px 8px; border-radius: var(--radius-pill); background: rgba(0, 0, 0, .35); border: 2px solid rgba(233, 180, 32, .6); }
 .pk-pot span { display: grid; line-height: 1.1; } .pk-pot small { font: 800 .7rem var(--font-body); text-transform: uppercase; letter-spacing: .08em; opacity: .85; }
 .pk-pot b { font: 700 1.15rem var(--font-display); color: var(--oro-200); font-variant-numeric: tabular-nums; }
@@ -112,8 +112,8 @@
   .pk-table { aspect-ratio: 4 / 5; min-height: 0; max-height: none; }
   .pk-rail { inset: 7% 4%; padding: 9px; }
   .pk-board { gap: 3px; min-height: 51px; }
-  .pk-board .pcard, .pk-slot { width: 34px; height: 51px; }
-  .pk-board.draw .pcard.sm { width: 34px; height: 51px; }
+  .pk-board .pcard, .pk-slot { width: 34px; height: auto; }
+  .pk-board.draw .pcard.sm { width: 34px; height: auto; }
   .pk-phase { font-size: .78rem; padding: 2px 10px; } .pk-phase small { display: none; }
   .pk-pot { padding: 2px 10px 2px 6px; } .pk-pot b { font-size: .95rem; } .pk-pot small { font-size: .6rem; }
   .pk-chips i { width: 16px; height: 6px; margin-top: -2px; }
@@ -124,12 +124,12 @@
   .pk-who { width: 100%; } .pk-who strong { font-size: .74rem; } .pk-who strong small { display: none; } .pk-status { font-size: .64rem; }
   .pk-seat.me .pk-pod { width: 110px; max-width: 110px; }
   .pk-dealer { width: 20px; height: 20px; font-size: .66rem; right: -8px; top: -8px; }
-  .pk-cards .pcard.xs { width: 16px; height: 24px; } .pk-cards .pcard + .pcard { margin-left: -8px; }
-  .pk-cards.shown .pcard.sm { width: 28px; height: 42px; } .pk-cards.shown .pcard + .pcard { margin-left: -12px; }
+  .pk-cards .pcard.xs { width: 16px; height: auto; } .pk-cards .pcard + .pcard { margin-left: -8px; }
+  .pk-cards.shown .pcard.sm { width: 28px; height: auto; } .pk-cards.shown .pcard + .pcard { margin-left: -12px; }
   .pk-rank { font-size: .64rem; padding: 0 6px; }
   .pk-won { font-size: .78rem; padding: 0 6px; }
   .pk-hand { gap: 4px; padding-top: 14px; }
-  .draw5 ~ .pk-me .pk-hand .pcard.lg { width: 62px; height: 93px; }
+  .draw5 ~ .pk-me .pk-hand .pcard.lg { width: 62px; height: auto; }
   .pk-act { min-width: 0; flex: 1 1 100px; min-height: 48px; padding: 8px 12px; font-size: .95rem; }
   .pk-btns { width: 100%; }
 }
@@ -137,3 +137,5 @@
 @media (prefers-reduced-motion: reduce) {
   .pk-seat.turn .pk-pod, .pk-cards.flip .pcard, .pcard.pk-deal, .pk-bet.new, .pk-won { animation: none; }
 }
+.pk-cards { flex-wrap: nowrap; }
+@media (min-width: 800px) { .pk-cards .pcard.xs { --cw: 30px; } }

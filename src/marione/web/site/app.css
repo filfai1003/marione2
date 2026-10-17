@@ -624,7 +624,14 @@ body.has-player .ms-queue { max-height: calc(100dvh - var(--hh) - var(--pb-h) - 
 /* playing cards */
 .pcard { position: relative; display: inline-block; flex: none; padding: 0; border: 0; background: none; line-height: 0; border-radius: 9%/6%; transition: transform var(--dur-fast) var(--ease-bounce), box-shadow var(--dur-fast); }
 .pcard img { width: 100%; height: 100%; display: block; border-radius: inherit; box-shadow: 0 2px 6px rgba(0, 0, 0, .28); }
-.pcard.xs { width: 26px; height: 39px; } .pcard.sm { width: 52px; height: 78px; } .pcard.md { width: 76px; height: 114px; } .pcard.lg { width: 96px; height: 144px; }
+/* Card sizes grow with the screen (readable on a PC) and with the reader's zoom choice (--card-scale). */
+.pcard { --cw: 76px; width: calc(var(--cw) * var(--card-scale, 1)); height: auto; aspect-ratio: 2 / 3; }
+.pcard.xs { --cw: 34px; } .pcard.sm { --cw: clamp(52px, 4.6vw, 82px); }
+.pcard.md { --cw: clamp(76px, 6.8vw, 118px); } .pcard.lg { --cw: clamp(96px, 9vw, 150px); }
+.page.page-wide { max-width: 1360px; }
+.card-zoom { display: inline-flex; border: 2.5px solid var(--line); border-radius: var(--radius-pill); overflow: hidden; background: var(--surface); }
+.card-zoom button { min-width: 40px; min-height: 40px; border: 0; background: transparent; cursor: pointer; font: 700 .95rem var(--font-display); color: var(--ink); }
+.card-zoom button[aria-pressed="true"] { background: var(--oro-400); color: var(--oliva-900); }
 .pcard.click { cursor: pointer; }
 .pcard.click:hover:not(:disabled) { transform: translateY(-10px); }
 .pcard.click:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
@@ -712,10 +719,22 @@ body.has-player .ms-queue { max-height: calc(100dvh - var(--hh) - var(--pb-h) - 
   .game-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .game-tile { padding: 12px 8px; } .game-tile .ico { width: 56px; height: 56px; } .game-tile small { display: none; }
   .felt { padding: 10px; gap: 10px; }
-  .pcard.lg { width: 64px; height: 96px; } .pcard.md { width: 54px; height: 81px; } .pcard.sm { width: 40px; height: 60px; } .pcard.xs { width: 18px; height: 27px; }
+  .pcard.lg { --cw: 64px; } .pcard.md { --cw: 54px; } .pcard.sm { --cw: 40px; } .pcard.xs { --cw: 18px; }
   .opp-cards .pcard + .pcard { margin-left: -10px; }
   .table-mid { grid-template-columns: auto 1fr; } .mid-right { grid-column: 1 / -1; justify-self: stretch; }
   .score-box ul { grid-auto-flow: column; justify-content: space-around; }
   .hand { gap: 4px; } .hand .pcard.click:hover:not(:disabled) { transform: translateY(-6px); }
   .seat { padding-right: 8px; font-size: .9rem; }
 }
+
+/* games: easier to read on a big screen */
+@media (min-width: 800px) {
+  .felt { font-size: 1.06rem; padding: 22px; gap: 18px; }
+  .opp-name { font-size: 1.08rem; }
+  .turn-banner { font-size: 1.15rem; padding: 8px 20px; }
+  .score-box { min-width: 170px; } .score-box ul { font-size: 1rem; }
+  .trick-card small { font-size: .9rem; }
+  .hand { gap: 12px; }
+}
+.tbl-head .crumb { padding: 0; }
+.page.page-wide { gap: 16px; }

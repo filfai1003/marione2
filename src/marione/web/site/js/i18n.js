@@ -386,6 +386,7 @@ const T = {
   'games.unitHint': ['Ante/blinds and every bet are multiples of it (bots’ chips are on Marione).', 'Ante/bui e ogni puntata ne sono multipli (le fiches dei bot le mette Marione).', 'Ante/blinds et chaque mise en sont des multiples (les jetons des bots sont offerts par Marione).'],
   'games.stake': ['Stake per player', 'Posta a testa', 'Mise par joueur'],
   'games.stakeHint': ['Each player puts it in; the winners take the pot. 0 to play for fun.', 'Ognuno la mette in piatto; chi vince prende il piatto. 0 per giocare per divertimento.', 'Chacun la met au pot ; les gagnants prennent tout. 0 pour jouer pour le plaisir.'],
+  'games.cardSize': ['Card size', 'Dimensione carte', 'Taille des cartes'],
   'games.rules': ['Rules', 'Regole', 'Règles'],
   'games.play': ['Play', 'Gioca', 'Jouer'],
   'games.openForFriends': ['Open for friends', 'Apri agli amici', 'Ouvrir aux amis'],

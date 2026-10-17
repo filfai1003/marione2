@@ -165,7 +165,30 @@ export function rulesDialog(key) {
 // ======================================================================================
 // a table
 // ======================================================================================
+// Card size the reader picked (kept in this browser): small, normal or large.
+const ZOOMS = [['S', 0.85], ['M', 1], ['L', 1.25], ['XL', 1.5]];
+function cardScale() {
+  let v = 1;
+  try { v = Number(localStorage.getItem('marione-card-scale')) || 1; } catch { /* storage blocked */ }
+  return v;
+}
+function setCardScale(v) {
+  document.documentElement.style.setProperty('--card-scale', String(v));
+  try { localStorage.setItem('marione-card-scale', String(v)); } catch { /* storage blocked */ }
+}
+setCardScale(cardScale());
+function zoomControl() {
+  const now = cardScale();
+  const box = h('div', { class: 'card-zoom', role: 'group', 'aria-label': t('games.cardSize') });
+  for (const [label, v] of ZOOMS) {
+    box.append(h('button', { type: 'button', 'aria-pressed': String(v === now), title: t('games.cardSize') + ' ' + label,
+      onclick: () => { setCardScale(v); box.querySelectorAll('button').forEach((b, i) => b.setAttribute('aria-pressed', String(ZOOMS[i][1] === v))); } }, label));
+  }
+  return box;
+}
+
 function tableView(root, id) {
+  root.classList.add('page-wide');
   const head = h('div', { class: 'tbl-head' });
   const seatsEl = h('div', { class: 'seats' });
   const board = h('div', { class: 'board' });
@@ -229,11 +252,13 @@ function tableView(root, id) {
       h('div', { class: 'tbl-title' }, icon(tb.game, 44), h('div', null, h('h1', null, gname(tb.game)),
         h('small', null, [modeName(tb.mode), tb.stake ? (GAME_BETS[tb.game] ? t('games.unitIs', { n: fmt(tb.stake) }) : t('games.stakeIs', { n: fmt(tb.stake) })) : null].filter(Boolean).join(' · ')))),
       h('div', { class: 'tbl-tools' },
+        zoomControl(),
         h('button', { type: 'button', class: 'icon-btn round', title: t('games.rules'), 'aria-label': t('games.rules'), onclick: () => rulesDialog(tb.game) }, '📖'),
         me != null ? btn(t('games.leave'), 'ghost sm', { onclick: (e) => leave(e.currentTarget) }) : null));
     // seats
     const teamOf = (i) => tb.teams.findIndex((tm) => tm.includes(i));
-    fill(seatsEl, tb.seats.length > 1 ? tb.seats.map((s, i) => h('div', {
+    // While playing, every board shows the players around the table: the strip is only for the lobby moments.
+    fill(seatsEl, tb.seats.length > 1 && tb.status !== 'playing' ? tb.seats.map((s, i) => h('div', {
       class: 'seat' + (tb.toAct.includes(i) ? ' turn' : '') + (i === me ? ' me' : '') + (s && s.bot ? ' bot' : '') + (teamOf(i) >= 0 ? ' team' + teamOf(i) : ''),
     },
     h('span', { class: 'seat-av', 'aria-hidden': 'true' }, s ? (s.bot ? '🤖' : (s.name || '?')[0].toUpperCase()) : '＋'),
@@ -270,6 +295,7 @@ function tableView(root, id) {
     const renderer = RENDERERS[tb.game];
     if (renderer && tb.state) renderer.render(board, tb, ctx);
     else fill(board, empty('🎲', t('games.noRenderer')));
+    keepBoardInView(tb);
     fill(logEl, (tb.log || []).slice().reverse().map((e) => h('li', null, logLine(tb, e))));
   }
 
@@ -277,6 +303,23 @@ function tableView(root, id) {
     const who = e.seat != null ? ctx.name(e.seat) : '';
     const bits = Object.entries(e).filter(([k]) => k !== 'kind' && k !== 'seat').map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(' ') : typeof v === 'object' && v ? JSON.stringify(v) : v}`);
     return [who ? h('strong', null, who + ' ') : null, t('glog.' + e.kind) !== 'glog.' + e.kind ? t('glog.' + e.kind) : e.kind, bits.length ? h('small', null, ' · ' + bits.join(' · ')) : null];
+  }
+
+  // On a laptop the table is taller than the screen: when it becomes your turn, make sure the
+  // bottom of the board (your cards and buttons) is visible.
+  let wasMine = false;
+  function keepBoardInView(tb) {
+    const mine = tb.status === 'playing' && tb.toAct.includes(tb.you);
+    if (mine && !wasMine) {
+      const r = board.getBoundingClientRect();
+      const bottomBar = document.querySelector('.tabbar');
+      const limit = window.innerHeight - (bottomBar && bottomBar.offsetParent ? bottomBar.offsetHeight : 0) - 8;
+      if (r.bottom > limit) {
+        const delta = Math.min(r.bottom - limit, Math.max(0, r.top - 70));
+        if (delta > 0) window.scrollBy({ top: delta, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+      }
+    }
+    wasMine = mine;
   }
 
   async function start(b) {
@@ -300,7 +343,7 @@ function tableView(root, id) {
   return {
     update() {},
     tick() { if (table && table.turnLeft != null) { table.turnLeft = Math.max(0, table.turnLeft - 1); const el = board.querySelector('[data-turnleft]'); if (el) el.textContent = table.turnLeft + 's'; } },
-    destroy() { alive = false; if (RENDERERS[table && table.game] && RENDERERS[table.game].destroy) RENDERERS[table.game].destroy(); },
+    destroy() { alive = false; root.classList.remove('page-wide'); if (RENDERERS[table && table.game] && RENDERERS[table.game].destroy) RENDERERS[table.game].destroy(); },
   };
 }
 

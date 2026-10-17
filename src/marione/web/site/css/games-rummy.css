@@ -12,7 +12,7 @@
 .rm-pile.click:hover { transform: translateY(-6px) rotate(-2deg); }
 .rm-pile.click:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; }
 .rm-pile.locked .pcard img { filter: brightness(.7) saturate(.5); }
-.rm-empty { display: grid; place-items: center; width: 76px; height: 114px; border: 2px dashed rgba(255, 248, 231, .5); border-radius: 8px; font: 700 .85rem var(--font-body); line-height: 1.2; }
+.rm-empty { display: grid; place-items: center; width: calc(clamp(76px, 6.8vw, 118px) * var(--card-scale, 1)); aspect-ratio: 2 / 3; border: 2px dashed rgba(255, 248, 231, .5); border-radius: 8px; font: 700 .85rem var(--font-body); line-height: 1.2; }
 @keyframes rm-glow { 0%, 100% { box-shadow: 0 0 0 0 rgba(233, 180, 32, 0); } 50% { box-shadow: 0 0 0 5px rgba(233, 180, 32, .65); } }
 .rm-info { flex: 1 1 220px; min-width: 0; max-width: 460px; display: grid; gap: 8px; justify-items: start; }
 .rm-info p { margin: 0; }
