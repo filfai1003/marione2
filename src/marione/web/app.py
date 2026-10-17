@@ -1,5 +1,6 @@
 """The web server: the page (static files), the JSON API and the health check, on one port."""
 
+import mimetypes
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
@@ -9,6 +10,8 @@ from marione.web import api, games_api
 from marione.web.deps import WebDeps
 
 SITE = Path(__file__).parent / "site"
+# Slim images have no system MIME table and Python 3.12 does not know WebP by itself.
+mimetypes.add_type("image/webp", ".webp")
 MAX_UPLOAD = 9 * 1024 * 1024  # one sound is capped at 8 MB; the rest is form overhead
 
 CSP = (
