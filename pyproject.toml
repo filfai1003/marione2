@@ -15,6 +15,7 @@ dependencies = [
   "pydantic-settings>=2.3",
   "yt-dlp[default]>=2026.8.19",
   "deno>=2.4",  # the JavaScript runtime yt-dlp needs for YouTube
+  "yt-dlp-ejs>=0.8",  # the scripts that solve YouTube's JavaScript challenges (else links give 403)
   "chess>=1.10",  # chess rules (python-chess); the engine runs locally
 ]
 

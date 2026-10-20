@@ -6,8 +6,10 @@ proxy (`YTDLP_PROXY`) help; title searches fall back to SoundCloud when YouTube 
 """
 
 import asyncio
+import importlib.util
 import logging
 import re
+import shutil
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,6 +17,8 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import yt_dlp
+import yt_dlp.networking
+import yt_dlp.networking.exceptions
 
 logger = logging.getLogger("marione.music")
 
@@ -156,12 +160,28 @@ class Ytdl:
         headers = {str(k): str(v) for k, v in (info.get("http_headers") or {}).items()}
         return Stream(url, headers)
 
+    def _playable(self, stream: Stream) -> bool:
+        """Does the stream really answer? YouTube can hand out links that then refuse the download
+        (403) when its JavaScript challenge was not solved: better to know before playing."""
+        request = yt_dlp.networking.Request(
+            stream.url, headers={**stream.headers, "Range": "bytes=0-2047"}
+        )
+        try:
+            with yt_dlp.YoutubeDL(self._opts()) as ydl:
+                response = ydl.urlopen(request)
+                ok = bool(response.read(2048))
+                response.close()
+                return ok
+        except (yt_dlp.networking.exceptions.RequestError, OSError) as exc:
+            logger.warning("the audio stream does not answer: %s", exc)
+            return False
+
     def _stream_sync(self, track: Track) -> Stream:
         try:
             stream = self._stream_of(self._extract(track.url, format="bestaudio/best"))
-            if stream is not None:
+            if stream is not None and (track.source != "youtube" or self._playable(stream)):
                 return stream
-            problem = "no audio stream"
+            problem = "no audio stream" if stream is None else "the stream refused the download"
         except yt_dlp.utils.DownloadError as exc:
             problem = str(exc)
         if track.source != "youtube":
@@ -174,7 +194,8 @@ class Ytdl:
         except yt_dlp.utils.DownloadError as exc:
             raise MusicError(problem) from exc
         for entry in found.get("entries") or []:
-            if isinstance(entry, dict) and (stream := self._stream_of(entry)) is not None:
+            stream = self._stream_of(entry) if isinstance(entry, dict) else None
+            if stream is not None and self._playable(stream):
                 return stream
         raise MusicError(problem)
 
@@ -193,6 +214,15 @@ class Ytdl:
 
     async def stream(self, track: Track) -> Stream:
         return await asyncio.to_thread(self._stream_sync, track)
+
+    @staticmethod
+    def check_runtime() -> None:
+        """Say in the log if YouTube links will fail: without the challenge solver and a
+        JavaScript runtime YouTube gives links that answer 403."""
+        if importlib.util.find_spec("yt_dlp_ejs") is None:
+            logger.warning("yt-dlp-ejs is missing: YouTube songs will not play")
+        if shutil.which("deno") is None and importlib.util.find_spec("deno") is None:
+            logger.warning("deno is not on PATH: YouTube songs will not play")
 
     def close(self) -> None:
         if self._cookie_file:

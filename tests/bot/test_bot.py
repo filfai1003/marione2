@@ -1,6 +1,6 @@
 import re
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 import discord
@@ -152,7 +152,7 @@ class TestRestartPolicy:
 
     def test_rate_limit_backs_off_for_a_long_time(self) -> None:
         response = SimpleNamespace(status=429, reason="Too Many Requests")
-        error = discord.HTTPException(response, "slow down")
+        error = discord.HTTPException(cast(Any, response), "slow down")
         policy = restart_policy(error)
         assert policy.retry and policy.delay == RATE_LIMIT_BACKOFF
 

@@ -1,7 +1,9 @@
+import io
 from typing import Any, ClassVar
 
 import pytest
 import yt_dlp
+import yt_dlp.networking.exceptions
 
 from marione.bot.mixer import FRAME, Mixer, mix
 from marione.bot.music import MusicPlayer
@@ -135,6 +137,7 @@ class FakeYDL:
     """Replaces yt_dlp.YoutubeDL: answers from a dict, or raises for "ytsearch" when blocked."""
 
     answers: ClassVar[dict[str, Any]] = {}
+    refused: ClassVar[set[str]] = set()  # stream URLs that answer 403
     blocked_youtube = False
 
     def __init__(self, opts: dict[str, Any]) -> None:
@@ -154,10 +157,17 @@ class FakeYDL:
                 return answer
         raise yt_dlp.utils.DownloadError("nothing")
 
+    def urlopen(self, request: Any) -> Any:
+        assert request.headers.get("Range") == "bytes=0-2047"
+        if request.url in self.refused:
+            raise yt_dlp.networking.exceptions.RequestError("HTTP Error 403: Forbidden")
+        return io.BytesIO(b"audio bytes")
+
 
 @pytest.fixture
 def fake_ydl(monkeypatch: pytest.MonkeyPatch) -> type[FakeYDL]:
     FakeYDL.answers = {}
+    FakeYDL.refused = set()
     FakeYDL.blocked_youtube = False
     monkeypatch.setattr(yt_dlp, "YoutubeDL", FakeYDL)
     return FakeYDL
@@ -187,6 +197,20 @@ class TestYtdl:
         stream = await y.stream(track)
         assert stream == Stream("https://cdn/audio", {"User-Agent": "x"})
         y.close()
+
+    async def test_a_youtube_link_that_refuses_the_download_falls_back_to_soundcloud(
+        self, fake_ydl: type[FakeYDL]
+    ) -> None:
+        fake_ydl.refused = {"https://googlevideo/403"}
+        fake_ydl.answers = {
+            "https://www.youtube.com/watch?v=7": {"url": "https://googlevideo/403", "title": "x"},
+            "scsearch3:": {"entries": [{"url": "https://sndcdn/ok", "title": "song 7"}]},
+        }
+        track = Track("song 7", "https://www.youtube.com/watch?v=7")
+        assert (await Ytdl().stream(track)).url == "https://sndcdn/ok"
+        fake_ydl.refused.add("https://sndcdn/ok")
+        with pytest.raises(MusicError):
+            await Ytdl().stream(track)
 
     async def test_youtube_blocked_falls_back_to_soundcloud(self, fake_ydl: type[FakeYDL]) -> None:
         fake_ydl.blocked_youtube = True

@@ -56,6 +56,7 @@ async def run_bot(services: Services) -> int:
     def guild() -> discord.Guild | None:
         return current.get_guild(services.config.guild_id) if current else None
 
+    services.ytdl.check_runtime()
     voice = VoicePlayer(guild)
     voice.hold(services.config.voice_start_delay)
     music = MusicPlayer(
