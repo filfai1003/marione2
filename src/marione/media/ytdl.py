@@ -23,6 +23,21 @@ import yt_dlp.networking.exceptions
 logger = logging.getLogger("marione.music")
 
 URL_RE = re.compile(r"^https?://\S+$", re.I)
+# Words YouTube titles carry that SoundCloud titles do not: dropped before searching there.
+NOISE_RE = re.compile(
+    r"[\(\[][^\)\]]*(official|video|audio|lyric|testo|visuali[sz]er|remaster|hd|4k|live|clip)"
+    r"[^\)\]]*[\)\]]|\b(official (music )?video|videoclip ufficiale|lyrics?|testo)\b",
+    re.I,
+)
+
+
+def clean_title(title: str) -> str:
+    """ "Gipsy Kings - Volare (Official Video) [HD]" -> "Gipsy Kings - Volare" """
+    cleaned = NOISE_RE.sub(" ", title)
+    cleaned = re.sub(r"[|｜•·].*$", " ", cleaned)  # "Song | Channel name"
+    return re.sub(r"\s+", " ", cleaned).strip(" -–") or title
+
+
 MAX_DURATION = 3 * 3600  # longer than this is a live stream or a podcast: not for the player
 
 
@@ -189,14 +204,17 @@ class Ytdl:
         # YouTube often refuses server addresses ("sign in to confirm you're not a bot"):
         # the same song on SoundCloud is a good stand-in.
         logger.info("YouTube refused %s, trying SoundCloud: %s", track.url, problem[:120])
-        try:
-            found = self._extract(f"scsearch3:{track.title}", format="bestaudio/best")
-        except yt_dlp.utils.DownloadError as exc:
-            raise MusicError(problem) from exc
-        for entry in found.get("entries") or []:
-            stream = self._stream_of(entry) if isinstance(entry, dict) else None
-            if stream is not None and self._playable(stream):
-                return stream
+        queries = dict.fromkeys([clean_title(track.title), track.title])  # cleaned first, no dupes
+        for query in queries:
+            try:
+                found = self._extract(f"scsearch5:{query}", format="bestaudio/best")
+            except yt_dlp.utils.DownloadError as exc:
+                logger.warning("SoundCloud search failed for %r: %s", query, exc)
+                continue
+            for entry in found.get("entries") or []:
+                stream = self._stream_of(entry) if isinstance(entry, dict) else None
+                if stream is not None and self._playable(stream):
+                    return stream
         raise MusicError(problem)
 
     async def search(self, query: str, limit: int = 10) -> list[Track]:

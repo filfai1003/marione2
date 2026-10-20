@@ -11,7 +11,16 @@ from marione.db.music import MusicRepo
 from marione.db.pool import Pool
 from marione.db.settings import SettingsRepo
 from marione.media.queue import Entry, MusicQueue
-from marione.media.ytdl import MusicError, Stream, Track, Ytdl, is_url, source_of, track_from
+from marione.media.ytdl import (
+    MusicError,
+    Stream,
+    Track,
+    Ytdl,
+    clean_title,
+    is_url,
+    source_of,
+    track_from,
+)
 
 
 class Source:
@@ -177,6 +186,16 @@ def entry(i: int, host: str = "https://www.youtube.com/watch?v=") -> dict[str, A
     return {"url": f"{host}{i}", "title": f"song {i}", "duration": 100 + i}
 
 
+def test_clean_title_drops_youtube_noise() -> None:
+    assert clean_title("Gipsy Kings - Volare (Official Video) [HD]") == "Gipsy Kings - Volare"
+    assert (
+        clean_title("Modugno - Nel blu dipinto di blu (Testo)")
+        == "Modugno - Nel blu dipinto di blu"
+    )
+    assert clean_title("Song name | Some Channel") == "Song name"
+    assert clean_title("Official Video") == "Official Video"  # never empty
+
+
 class TestYtdl:
     async def test_search_resolve_and_stream(self, fake_ydl: type[FakeYDL]) -> None:
         fake_ydl.answers = {
@@ -204,7 +223,7 @@ class TestYtdl:
         fake_ydl.refused = {"https://googlevideo/403"}
         fake_ydl.answers = {
             "https://www.youtube.com/watch?v=7": {"url": "https://googlevideo/403", "title": "x"},
-            "scsearch3:": {"entries": [{"url": "https://sndcdn/ok", "title": "song 7"}]},
+            "scsearch5:": {"entries": [{"url": "https://sndcdn/ok", "title": "song 7"}]},
         }
         track = Track("song 7", "https://www.youtube.com/watch?v=7")
         assert (await Ytdl().stream(track)).url == "https://sndcdn/ok"
@@ -343,7 +362,7 @@ async def test_youtube_refusal_falls_back_to_a_full_soundcloud_stream(
     fake_ydl: type[FakeYDL],
 ) -> None:
     fake_ydl.answers = {
-        "scsearch3:": {
+        "scsearch5:": {
             "entries": [
                 {"url": "https://cf-preview-media.sndcdn.com/preview/0/30/x"},  # only 30 s
                 {"url": "https://cf-media.sndcdn.com/full.mp3", "http_headers": {}},
