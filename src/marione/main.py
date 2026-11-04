@@ -19,6 +19,7 @@ from marione.config import load_settings
 from marione.db.pool import Pool, create_pool, migrate
 from marione.games.tables import GameHall
 from marione.media.finder import MediaFinder
+from marione.watch import log_memory
 from marione.web import app as web_app
 from marione.web.deps import WebDeps
 
@@ -87,6 +88,7 @@ async def run_bot(services: Services) -> int:
                 logger.warning("games housekeeping failed: %r", exc)
 
     ticker = asyncio.create_task(tick_games())
+    memory_log = asyncio.create_task(log_memory())
     runner = await web_app.start(
         web_app.create_app(
             deps,
@@ -143,6 +145,7 @@ async def run_bot(services: Services) -> int:
         return 0
     finally:
         ticker.cancel()
+        memory_log.cancel()
         await hall.shutdown()  # coins still in play go back to their owners
         await runner.cleanup()
         await deps.http.aclose()
