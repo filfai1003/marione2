@@ -10,7 +10,7 @@ from aiohttp.test_utils import TestClient, TestServer
 from marione.bot.music import MusicPlayer
 from marione.dev.preview import FakeVoice, fake_source
 from marione.media.finder import MediaFinder
-from marione.media.ytdl import Stream, Track
+from marione.media.ytdl import MusicError, Stream, Track
 from marione.web import app as web_app
 from marione.web import session
 from tests.web.helpers import ADMIN, ANNA, BRUNO, Client, Harness, client, settings, wav_form
@@ -36,37 +36,9 @@ def bearer(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-class TestSlots:
-    async def test_a_slot_holds_one_sound_and_a_sound_one_slot(self, c: Client) -> None:
-        a, b = await add_sound(c, "Applausi"), await add_sound(c, "Boo")
-        assert (await c.post("/api/soundboard/slot", json={"id": a, "slot": 1})).status == 200
-        assert (await c.post("/api/soundboard/slot", json={"id": b, "slot": 1})).status == 200
-        state = await (await c.get("/api/state")).json()
-        assert {s["name"]: s["slot"] for s in state["sounds"]} == {"Applausi": None, "Boo": 1}
-        await c.post("/api/soundboard/slot", json={"id": b, "slot": 3})  # moving frees slot 1
-        state = await (await c.get("/api/state")).json()
-        assert {s["name"]: s["slot"] for s in state["sounds"]} == {"Applausi": None, "Boo": 3}
-        await c.post("/api/soundboard/slot", json={"id": b, "slot": None})
-        state = await (await c.get("/api/state")).json()
-        assert {s["slot"] for s in state["sounds"]} == {None}
-
-    async def test_errors_and_personal(self, c: Client, h: Harness) -> None:
-        a = await add_sound(c, "Applausi")
-        for slot in (0, 5, "x", True):
-            r = await c.post("/api/soundboard/slot", json={"id": a, "slot": slot})
-            assert r.status == 400 and (await r.json())["error"] == "bad_request"
-        assert (await c.post("/api/soundboard/slot", json={"id": "999", "slot": 1})).status == 404
-        await c.post("/api/soundboard/slot", json={"id": a, "slot": 2})
-        async for bruno in client(h, BRUNO):
-            state = await (await bruno.get("/api/state")).json()
-            assert state["sounds"][0]["slot"] is None
-
-
 class TestExtension:
     async def test_pair_read_config_and_play(self, c: Client, h: Harness) -> None:
         a = await add_sound(c, "Applausi")
-        await c.post("/api/soundboard/shortcut", json={"id": a, "key": "Alt+1"})
-        await c.post("/api/soundboard/slot", json={"id": a, "slot": 2})
         token = await token_of(c)
         server = TestServer(web_app.create_app(h.deps, _ok, lambda: True))
         async with TestClient(server) as anon:  # no cookie: only the token identifies the member
@@ -74,7 +46,7 @@ class TestExtension:
             config = await (await anon.get("/api/ext/config", headers=bearer(token))).json()
             assert config["me"] == {"name": "Anna"} and config["inVoice"] is True
             assert config["sounds"] == [
-                {"id": a, "name": "Applausi", "emoji": "🔊", "shortcut": "Alt+1", "slot": 2}
+                {"id": a, "name": "Applausi", "emoji": "🔊", "shortcut": "Ctrl+1"}
             ]
             r = await anon.post(
                 "/api/ext/play",
@@ -259,3 +231,47 @@ class TestPlaylistsLikeYoutubeMusic:
                 "/api/music/playlist/move", json={"id": pid, "itemId": item, "index": 2}
             )
             assert r.status == 200
+
+
+class TestLinkInAPlaylist:
+    @pytest.fixture(autouse=True)
+    def resolver(self, h: Harness) -> None:
+        class Ytdl:
+            async def resolve(self, query: str) -> Track:
+                if "broken" in query:
+                    raise MusicError("blocked")
+                return Track("Notte di Sole", query, 98, "giulia", None, "suno")
+
+        h.services.ytdl = Ytdl()  # type: ignore[assignment]
+
+    async def test_paste_a_link_into_a_playlist(self, c: Client) -> None:
+        r = await c.post("/api/music/playlist/create", json={"name": "Mix"})
+        pid = (await r.json())["playlist"]["id"]
+        for link in ("https://suno.com/song/abc", "https://www.youtube.com/watch?v=xyz"):
+            r = await c.post("/api/music/playlist/add", json={"id": pid, "link": f" {link} "})
+            body = await r.json()
+            assert r.status == 200 and body["title"] == "Notte di Sole" and "Mix" in body["message"]
+        detail = await (await c.get(f"/api/music/playlist?id={pid}")).json()
+        assert [x["url"] for x in detail["tracks"]] == [
+            "https://suno.com/song/abc",
+            "https://www.youtube.com/watch?v=xyz",
+        ]
+
+    async def test_bad_links_and_permissions(self, c: Client, h: Harness) -> None:
+        r = await c.post("/api/music/playlist/create", json={"name": "Mix"})
+        pid = (await r.json())["playlist"]["id"]
+        r = await c.post(
+            "/api/music/playlist/add", json={"id": pid, "link": "https://broken.example/x"}
+        )
+        assert r.status == 502 and (await r.json())["error"] == "error"
+        r = await c.post("/api/music/playlist/add", json={"id": pid, "link": "not a link"})
+        assert r.status == 400  # not a link and no track: nothing to add
+        await h.services.settings.set_enabled("music", False)
+        r = await c.post("/api/music/playlist/add", json={"id": pid, "link": "https://a.example/x"})
+        assert r.status == 409 and (await r.json())["error"] == "feature_off"
+        await h.services.settings.set_enabled("music", True)
+        async for bruno in client(h, BRUNO):  # last: this switches the signed-in member
+            r = await bruno.post(
+                "/api/music/playlist/add", json={"id": pid, "link": "https://a.example/x"}
+            )
+            assert r.status == 403

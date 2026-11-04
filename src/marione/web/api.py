@@ -21,7 +21,6 @@ from marione.db import library as library_db
 from marione.db.library import LibraryError, Upload
 from marione.db.playlists import Playlist, PlaylistError
 from marione.db.settings import FEATURES
-from marione.db.soundboard import ShortcutTaken
 from marione.db.sounds import MAX_BYTES, MAX_PER_MEMBER, SoundError
 from marione.domain.habits import describe as describe_habits
 from marione.i18n import LANGS, normalize, t, unit
@@ -573,46 +572,6 @@ async def board_add(request: web.Request) -> web.Response:
     )
 
 
-async def board_shortcut(request: web.Request) -> web.Response:
-    """Attach a key combination to a sound for this member (`key: null` removes it)."""
-    who, err = await _auth(request)
-    if err:
-        return err
-    body = await _json(request)
-    sound_id = _int(body.get("id"))
-    key = body.get("key")
-    board = _deps(request).services.soundboard
-    if sound_id is None or await board.get(sound_id) is None:
-        return fail(404, "not_found", t("sound_not_found", who.lang))
-    if key is not None and not isinstance(key, str):
-        return fail(400, "bad_request", t("shortcut_invalid", who.lang))
-    try:
-        saved = await board.set_shortcut(who.id, sound_id, key)
-    except ShortcutTaken as taken:
-        return fail(409, "exists", t("shortcut_taken", who.lang, name=taken.sound))
-    if not saved:
-        return fail(400, "bad_request", t("shortcut_invalid", who.lang))
-    return web.json_response({"ok": True, "shortcut": key})
-
-
-async def board_slot(request: web.Request) -> web.Response:
-    """Point one of the extension's four global slots at a sound (`slot: null` frees it)."""
-    who, err = await _auth(request)
-    if err:
-        return err
-    body = await _json(request)
-    sound_id = _int(body.get("id"))
-    slot = body.get("slot")
-    board = _deps(request).services.soundboard
-    if sound_id is None or await board.get(sound_id) is None:
-        return fail(404, "not_found", t("sound_not_found", who.lang))
-    if slot is not None and (isinstance(slot, bool) or not isinstance(slot, int)):
-        return fail(400, "bad_request", t("shortcut_invalid", who.lang))
-    if not await board.set_slot(who.id, sound_id, slot):
-        return fail(400, "bad_request", t("shortcut_invalid", who.lang))
-    return web.json_response({"ok": True, "slot": slot})
-
-
 # --- browser extension: a personal token, and what the extension needs ---------------------------
 
 EXT_TOKEN_DAYS = 365
@@ -678,9 +637,7 @@ async def ext_config(request: web.Request) -> web.Response:
             "ok": True,
             "me": {"name": who.member.name},
             "inVoice": who.member.voice_channel is not None,
-            "sounds": [
-                {k: s[k] for k in ("id", "name", "emoji", "shortcut", "slot")} for s in sounds
-            ],
+            "sounds": [{k: s[k] for k in ("id", "name", "emoji", "shortcut")} for s in sounds],
         }
     )
 
@@ -1204,17 +1161,30 @@ async def playlist_add(request: web.Request) -> web.Response:
     if bad:
         return bad
     assert playlist is not None
-    raw = body.get("track")
-    track, bad = await _track_from_body(request, who, raw if isinstance(raw, dict) else {})
-    if bad:
-        return bad
+    link = body.get("link")
+    if isinstance(link, str) and is_url(link.strip()):  # a pasted link: find out what it is
+        if off := await _feature_off(request, who, "music"):
+            return off
+        try:
+            track: Track | None = await _deps(request).services.ytdl.resolve(link.strip())
+        except MusicError:
+            return fail(502, "error", t("music_error", who.lang))
+    else:
+        raw = body.get("track")
+        track, bad = await _track_from_body(request, who, raw if isinstance(raw, dict) else {})
+        if bad:
+            return bad
     assert track is not None
     try:
         await _deps(request).services.playlists.add_track(playlist.id, track)
     except PlaylistError as exc:
         return _playlist_error(exc, who.lang)
     return web.json_response(
-        {"ok": True, "message": plain(t("playlist_added", who.lang, name=playlist.name))}
+        {
+            "ok": True,
+            "message": plain(t("playlist_added", who.lang, name=playlist.name)),
+            "title": track.title,
+        }
     )
 
 
@@ -1730,8 +1700,6 @@ def add_routes(app: web.Application) -> None:
     r.add_post("/api/soundboard/stop", board_stop)
     r.add_post("/api/soundboard/volume", board_volume)
     r.add_post("/api/soundboard/favorite", board_favorite)
-    r.add_post("/api/soundboard/shortcut", board_shortcut)
-    r.add_post("/api/soundboard/slot", board_slot)
     r.add_post("/api/ext/token", ext_token)
     r.add_post("/api/ext/revoke", ext_revoke)
     r.add_get("/api/ext/config", ext_config)

@@ -6,7 +6,6 @@ import { run, refreshState, handleError } from '../data.js';
 import { toast } from '../toast.js';
 import { t, locale } from '../i18n.js';
 import { pageHead, notice, btn, nameModal, confirmDialog, pickFile, searchBox, chipGroup, empty, preview, popover } from '../ui.js';
-import { shortcutModal } from '../shortcuts.js';
 import { openExtension } from '../extension.js';
 
 /** Upload modal for a file (also used by the global drag & drop). */
@@ -66,6 +65,7 @@ export function mount(root) {
     h('div', { class: 'bb-out' },
       h('label', { class: 'vol' }, h('span', { 'aria-hidden': 'true', title: t('board.volume') }, '🔈'), h('span', { class: 'sr-only' }, t('board.volume')), vol, volOut), stopBtn));
   const count = h('p', { class: 'muted small', 'aria-live': 'polite' });
+  body.append(h('p', { class: 'muted small' }, '⌨️ ' + t('board.hotkeys')));
   const grid = h('div');
   body.append(bar, count, grid);
 
@@ -94,7 +94,6 @@ export function mount(root) {
       const a = h('a', { href: '/api/soundboard/audio?download=1&id=' + encodeURIComponent(s.id), download: '' });
       document.body.append(a); a.click(); a.remove();
     }],
-    ['⌨️', t('board.shortcut'), () => shortcutModal(s)],
     canEdit ? ['✏️', t('board.edit'), () => rename(s)] : null,
     canDelete ? ['🗑', t('common.delete'), () => remove(s), 'danger'] : null,
   ]);
@@ -105,8 +104,7 @@ export function mount(root) {
       onclick: (e) => play(s, e.currentTarget.closest('.tile')) },
       h('span', { class: 'tile-emoji', 'aria-hidden': 'true' }, s.emoji || '🔊'),
       h('span', { class: 'tile-name' }, s.name), h('small', null, (on ? '🎧 ' : '') + fmtDur(s.durationMs)),
-      s.shortcut || s.slot ? h('kbd', { class: 'tile-key', title: t('board.shortcut') },
-        [s.shortcut, s.slot ? '🌐' + s.slot : null].filter(Boolean).join(' · ')) : null);
+      s.shortcut ? h('kbd', { class: 'tile-key', title: t('board.hotkeys') }, s.shortcut) : null);
     return h('div', { class: 'tile' + (s.fav ? ' fav' : '') + (on ? ' previewing' : '') },
       main,
       h('button', { type: 'button', class: 'tile-star' + (s.fav ? ' on' : ''), 'aria-pressed': String(!!s.fav),

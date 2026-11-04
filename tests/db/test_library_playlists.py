@@ -4,7 +4,6 @@ from marione.db import library as lib
 from marione.db.library import LibraryError, LibraryRepo
 from marione.db.playlists import MAX_TRACKS, PlaylistError, PlaylistRepo
 from marione.db.pool import Pool
-from marione.db.soundboard import ShortcutTaken, SoundboardRepo
 from marione.media.ytdl import Track
 
 
@@ -120,44 +119,3 @@ class TestPlaylists:
         assert len(await r.items(pid)) == 2
         await library.remove(upload)
         assert [i.track.title for i in await r.items(pid)] == ["song 1"]
-
-
-async def board_sound(repo: SoundboardRepo, name: str) -> int:
-    return await repo.add(1, name, "", "audio/wav", b"RIFF", 1000)
-
-
-class TestShortcuts:
-    async def test_set_replace_clear_and_list(self, pool: Pool) -> None:
-        board = SoundboardRepo(pool)
-        a, b = await board_sound(board, "Applausi"), await board_sound(board, "Boo")
-        assert await board.set_shortcut(7, a, "Alt+1") is True
-        assert await board.set_shortcut(7, a, "Ctrl+Shift+K") is True  # a new key replaces the old
-        assert await board.set_shortcut(7, b, "F5") is True
-        keys = {s.name: s.shortcut for s in await board.catalog(7)}
-        assert keys == {"Applausi": "Ctrl+Shift+K", "Boo": "F5"}
-        assert {s.shortcut for s in await board.catalog(8)} == {None}  # theirs only
-        assert await board.set_shortcut(7, a, None) is True
-        assert [s.shortcut for s in await board.catalog(7) if s.name == "Applausi"] == [None]
-
-    async def test_a_key_opens_only_one_sound(self, pool: Pool) -> None:
-        board = SoundboardRepo(pool)
-        a, b = await board_sound(board, "Applausi"), await board_sound(board, "Boo")
-        await board.set_shortcut(7, a, "Alt+1")
-        with pytest.raises(ShortcutTaken) as taken:
-            await board.set_shortcut(7, b, "Alt+1")
-        assert taken.value.sound == "Applausi"
-        assert await board.set_shortcut(8, b, "Alt+1") is True  # another member may use it
-
-    @pytest.mark.parametrize("key", ["", "a", "Alt+", "Space", "Alt+Alt+1", "F13", "Meta+K", "1+2"])
-    async def test_invalid_keys_are_refused(self, pool: Pool, key: str) -> None:
-        board = SoundboardRepo(pool)
-        sound = await board_sound(board, "Applausi")
-        assert await board.set_shortcut(7, sound, key) is False
-
-    async def test_unknown_sound_and_cascade(self, pool: Pool) -> None:
-        board = SoundboardRepo(pool)
-        assert await board.set_shortcut(7, 999, "Alt+1") is False
-        sound = await board_sound(board, "Applausi")
-        await board.set_shortcut(7, sound, "Num5")
-        await board.remove(sound)
-        assert await pool.fetchval("select count(*) from marione.soundboard_shortcuts") == 0

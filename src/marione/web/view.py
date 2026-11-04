@@ -66,6 +66,11 @@ async def history(
     return total, items
 
 
+# The first ten sounds of a member's list (favourites first, then by name) answer to Ctrl+1 … Ctrl+9
+# and Ctrl+0: no setup, the keys follow the list.
+HOTKEYS = [f"Ctrl+{n}" for n in (1, 2, 3, 4, 5, 6, 7, 8, 9, 0)]
+
+
 async def sounds_json(deps: WebDeps, user_id: int) -> list[dict[str, Any]]:
     return [
         {
@@ -75,10 +80,9 @@ async def sounds_json(deps: WebDeps, user_id: int) -> list[dict[str, Any]]:
             "durationMs": s.duration_ms,
             "fav": s.fav,
             "own": s.creator_id == user_id,
-            "shortcut": s.shortcut,
-            "slot": s.slot,
+            "shortcut": HOTKEYS[i] if i < len(HOTKEYS) else None,
         }
-        for s in await deps.services.soundboard.catalog(user_id)
+        for i, s in enumerate(await deps.services.soundboard.catalog(user_id))
     ]
 
 

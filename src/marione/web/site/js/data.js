@@ -4,7 +4,12 @@ import { store, set, setRobCooldown } from './store.js';
 import { toast } from './toast.js';
 import { t } from './i18n.js';
 
+let soundKeys = '';
+
 export function applyState(s) {
+  // Which sound has which key changed (a star, a new sound…): the extension, if there, updates its list.
+  const keys = (s.sounds || []).map((x) => x.id + ':' + (x.shortcut || '')).join(',');
+  if (keys !== soundKeys) { soundKeys = keys; window.postMessage({ type: 'marione-refresh' }, location.origin); }
   setRobCooldown(s.rob ? s.rob.cooldownSeconds : 0);
   set({ state: s, me: { ...store.me, ...s.me }, balance: s.balance, inVoice: s.inVoice, voiceChannel: s.voiceChannel });
 }

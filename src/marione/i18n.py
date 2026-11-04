@@ -365,16 +365,6 @@ M: Final[dict[str, dict[str, str]]] = {
         "it": "🎶 **{name}**: {count} canzoni in riproduzione.",
         "fr": "🎶 **{name}** : {count} morceaux lancés.",
     },
-    "shortcut_taken": {
-        "en": "These keys already play “{name}”.",
-        "it": "Questi tasti suonano già «{name}».",
-        "fr": "Ces touches jouent déjà « {name} ».",
-    },
-    "shortcut_invalid": {
-        "en": "That key combination can't be used.",
-        "it": "Questa combinazione di tasti non è utilizzabile.",
-        "fr": "Cette combinaison de touches n'est pas utilisable.",
-    },
     "music_queue_title": {"en": "🎶 **Queue**", "it": "🎶 **Coda**", "fr": "🎶 **File d'attente**"},
     "music_next_empty": {
         "en": "Nothing after this one.",
