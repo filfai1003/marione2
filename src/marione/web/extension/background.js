@@ -44,12 +44,12 @@ async function play(id) {
   }
 }
 
-// Global keys: the member picks the sound of each slot on the site.
+// The four commands (Ctrl+Shift+1…4, made global by the member if wanted) play the sounds that have Ctrl+1…4.
 ext.commands.onCommand.addListener(async (name) => {
   const slot = Number(name.replace('sound-', ''));
   let { config } = await read('config');
   if (!config) { try { config = await refresh(); } catch { badge('!', '#d5321f'); return; } }
-  const sound = config.sounds.find((s) => s.slot === slot);
+  const sound = config.sounds.find((s) => s.shortcut === 'Ctrl+' + slot);
   if (!sound) { badge('?', '#d29a0a'); return; }
   await play(sound.id);
   refresh().catch(() => {}); // pick up changes made on the site
@@ -67,6 +67,8 @@ ext.runtime.onMessage.addListener((msg, sender, reply) => {
       try { reply({ ok: true, config: await refresh() }); } catch (e) { reply({ ok: false, message: String(e.message || e) }); }
     } else if (msg.type === 'play') {
       reply(await play(msg.id));
+      const { fetchedAt } = await read('fetchedAt');
+      if (!fetchedAt || Date.now() - fetchedAt > 60000) refresh().catch(() => {}); // the list may have changed
     } else if (msg.type === 'unpair') {
       await write({ token: null, config: null });
       reply({ ok: true });

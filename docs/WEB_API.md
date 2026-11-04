@@ -82,7 +82,7 @@ Liste paginate (mai liste infinite): `offset` (da 0) e `limit` (1–50, predefin
 `GET /api/soundboard/list` → `{"ok":true,"sounds":[…],"volume":80}` (preferiti per primi, poi per nome).
 `GET /api/soundboard/audio?id=7` → il file audio (`&download=1` lo manda come allegato col nome del suono; chiunque).
 `POST /api/soundboard/play` `{"id":"7"}`; `stop` `{}`; `volume` `{"percent":80}`; `favorite` `{"id":"7"}` (toggle).
-`POST /api/soundboard/shortcut` `{"id":"7","key":"Alt+1"}` (`key: null` removes it) → `{"ok":true,"shortcut":"Alt+1"}`. Personal to the member: each sound in `sounds` (list and `/api/state`) carries `"shortcut": "Alt+1"|null`. Keys are `[Ctrl+][Alt+][Shift+]` + one of `A–Z`, `0–9`, `F1–F12`, `Num0–Num9`, `NumAdd/NumSubtract/NumMultiply/NumDivide/NumDecimal`, `Up/Down/Left/Right`, `Insert/Home/End/PageUp/PageDown` (the page builds them from `KeyboardEvent.code`). Errors: `not_found`, `bad_request` (invalid key), `exists` (409: the key already opens another of their sounds, the message names it). The page listens for them on every page and calls `play`.
+**Scorciatoie**: nessuna impostazione. I primi dieci suoni della lista del membro (preferiti per primi, poi per nome) rispondono a Ctrl+1 … Ctrl+9 e Ctrl+0: ogni suono in `sounds` (lista e `/api/state`) ha `"shortcut": "Ctrl+1"|…|"Ctrl+0"|null`, calcolato dal server, quindi i tasti seguono la lista. La pagina li ascolta su ogni pagina e chiama `play`.
 `POST /api/soundboard/add` multipart: `name` (1–40), `emoji` (opzionale), `file` (mp3/wav/ogg, ≤ 8 MB, ≤ 30 s). Tutti possono aggiungere.
 `POST /api/soundboard/rename` `{"id":"7","name":"Nuovo","emoji":"🎺"}` — solo admin (nome e icona).
 `POST /api/soundboard/remove` `{"id":"7"}` — **solo admin** (altrimenti `forbidden`).
@@ -117,17 +117,17 @@ Tutti le vedono e le suonano; le modifica solo chi le ha create (o un admin, alt
 ### Playlist: ordine, copertine, "salva in playlist"
 
 `GET /api/music/playlists` aggiunge a ogni playlist `"covers":[{"thumbnail","url","source"}]` (i primi 4 brani, per la copertina a mosaico); con `?track=<url>` aggiunge anche `"has": true|false` (la playlist contiene già quel brano).
+`POST /api/music/playlist/add` accetta anche `{"id","link":"https://…"}` (YouTube, Suno o altro: il server riconosce il brano; risposta con `"title"`).
 `POST /api/music/playlist/create` accetta anche `"tracks":[…]` (fino a 50 brani: "salva la coda come playlist").
 `POST /api/music/playlist/remove` accetta `{"id","url"}` per togliere ogni copia di un brano (oltre a `{"id","itemId"}`).
 `POST /api/music/playlist/move` `{"id","itemId","index"}` sposta un brano (0 = primo); solo chi ha creato la playlist o un admin. I brani nuovi vanno in fondo; `play` rispetta l'ordine.
 
 ## Estensione del browser
 
-L'estensione (Chrome/Edge/Brave, MV3; `GET /marione-extension.zip` la genera con l'indirizzo del sito) suona i suoni con le scorciatoie su qualunque scheda e con 4 tasti **globali** (`chrome.commands`, "ambito Globale") anche col browser in background. Non usa il cookie: ha un token personale.
+L'estensione (Chrome/Edge/Brave, MV3; `GET /marione-extension.zip` la genera con l'indirizzo del sito) fa funzionare Ctrl+1…0 su qualunque scheda, e ha 4 comandi (Ctrl+Shift+1…4, i primi quattro suoni) che l'utente può rendere **globali** (`chrome.commands`) per il browser in background. Non usa il cookie: ha un token personale.
 `POST /api/ext/token` (cookie) → `{"ok":true,"token":"…"}` (la pagina lo passa all'estensione con `postMessage`; non lo mostra). Valido 365 giorni, firmato.
 `POST /api/ext/revoke` (cookie) scollega tutte le estensioni del membro.
-`GET /api/ext/config` → `{"ok":true,"me":{"name"},"inVoice","sounds":[{"id","name","emoji","shortcut","slot"}]}` e `POST /api/ext/play` `{"id":"7"}` (come `soundboard/play`): **solo** con `Authorization: Bearer <token>`; questo token non apre nessun altro endpoint. Errori: `unauthorized` (401), `not_in_guild` (403).
-`POST /api/soundboard/slot` `{"id":"7","slot":2}` (1–4, `null` libera): lo slot globale del suono; uno slot ha un suono e un suono ha uno slot. Ogni suono in `sounds` ha `"slot": 2|null`.
+`GET /api/ext/config` → `{"ok":true,"me":{"name"},"inVoice","sounds":[{"id","name","emoji","shortcut"}]}` e `POST /api/ext/play` `{"id":"7"}` (come `soundboard/play`): **solo** con `Authorization: Bearer <token>`; questo token non apre nessun altro endpoint. Errori: `unauthorized` (401), `not_in_guild` (403).
 
 ## Suoni d'entrata — SOLO ADMIN
 

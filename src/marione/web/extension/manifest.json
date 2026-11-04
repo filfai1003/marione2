@@ -3,22 +3,39 @@
   "name": "Marione soundboard keys",
   "version": "1.0.0",
   "description": "Play your Marione soundboard sounds with keyboard shortcuts from any tab, and with global keys even when the browser is in the background.",
-  "permissions": ["storage"],
-  "host_permissions": ["__ORIGIN__/*"],
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "__ORIGIN__/*"
+  ],
   "background": {
     "service_worker": "background.js",
-    "scripts": ["background.js"]
+    "scripts": [
+      "background.js"
+    ]
   },
   "content_scripts": [
     {
-      "matches": ["__ORIGIN__/*"],
-      "js": ["pair.js"],
+      "matches": [
+        "__ORIGIN__/*"
+      ],
+      "js": [
+        "pair.js"
+      ],
       "run_at": "document_start"
     },
     {
-      "matches": ["http://*/*", "https://*/*"],
-      "exclude_matches": ["__ORIGIN__/*"],
-      "js": ["keys.js"],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "exclude_matches": [
+        "__ORIGIN__/*"
+      ],
+      "js": [
+        "keys.js"
+      ],
       "run_at": "document_start"
     }
   ],
@@ -27,12 +44,34 @@
     "default_popup": "popup.html"
   },
   "commands": {
-    "sound-1": { "description": "Global slot 1: play the sound you chose for slot 1" },
-    "sound-2": { "description": "Global slot 2: play the sound you chose for slot 2" },
-    "sound-3": { "description": "Global slot 3: play the sound you chose for slot 3" },
-    "sound-4": { "description": "Global slot 4: play the sound you chose for slot 4" }
+    "sound-1": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+1"
+      },
+      "description": "Play your sound 1 (Ctrl+1 on the page). Set the scope to Global in chrome://extensions/shortcuts to use it with the browser in the background."
+    },
+    "sound-2": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+2"
+      },
+      "description": "Play your sound 2 (Ctrl+2 on the page). Set the scope to Global in chrome://extensions/shortcuts to use it with the browser in the background."
+    },
+    "sound-3": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+3"
+      },
+      "description": "Play your sound 3 (Ctrl+3 on the page). Set the scope to Global in chrome://extensions/shortcuts to use it with the browser in the background."
+    },
+    "sound-4": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+4"
+      },
+      "description": "Play your sound 4 (Ctrl+4 on the page). Set the scope to Global in chrome://extensions/shortcuts to use it with the browser in the background."
+    }
   },
   "browser_specific_settings": {
-    "gecko": { "id": "marione-soundboard@marione.app" }
+    "gecko": {
+      "id": "marione-soundboard@marione.app"
+    }
   }
 }

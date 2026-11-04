@@ -9,7 +9,7 @@ from marione.bot.music import MusicPlayer
 from marione.dev.preview import FakeVoice, fake_source, tone
 from marione.media.finder import MediaFinder
 from marione.media.ytdl import MusicError, Stream, Track
-from tests.web.helpers import ADMIN, ANNA, BRUNO, Client, Harness, client, wav_form
+from tests.web.helpers import ADMIN, BRUNO, Client, Harness, client, wav_form
 
 
 class FakeYtdl:
@@ -264,47 +264,37 @@ class TestPlaylists:
         assert (await (await c.get(f"/api/music/playlist?id={pid}")).json())["tracks"] == []
 
 
-class TestSoundShortcuts:
+class TestDefaultHotkeys:
     async def add_sound(self, c: Client, name: str) -> str:
         r = await c.post("/api/soundboard/add", data=wav_form(name))
         return str((await r.json())["sound"]["id"])
 
-    async def test_set_show_in_state_and_clear(self, c: Client, h: Harness) -> None:
-        a, b = await self.add_sound(c, "Applausi"), await self.add_sound(c, "Boo")
-        r = await c.post("/api/soundboard/shortcut", json={"id": a, "key": "Alt+1"})
-        assert (await r.json()) == {"ok": True, "shortcut": "Alt+1"}
-        await c.post("/api/soundboard/shortcut", json={"id": b, "key": "F5"})
+    async def keys(self, c: Client) -> dict[str, str | None]:
         state = await (await c.get("/api/state")).json()
-        assert {s["name"]: s["shortcut"] for s in state["sounds"]} == {
-            "Applausi": "Alt+1",
-            "Boo": "F5",
-        }
+        return {s["name"]: s["shortcut"] for s in state["sounds"]}
+
+    async def test_the_first_ten_sounds_get_ctrl_1_to_0_with_no_setup(self, c: Client) -> None:
+        for i in range(12):
+            await self.add_sound(c, f"s{i:02d}")
+        keys = await self.keys(c)
+        expected = [f"Ctrl+{n}" for n in (1, 2, 3, 4, 5, 6, 7, 8, 9, 0)]
+        assert [keys[f"s{i:02d}"] for i in range(10)] == expected
+        assert keys["s10"] is None and keys["s11"] is None
         listing = await (await c.get("/api/soundboard/list")).json()
-        assert {s["shortcut"] for s in listing["sounds"]} == {"Alt+1", "F5"}
-        await c.post("/api/soundboard/shortcut", json={"id": a, "key": None})
-        state = await (await c.get("/api/state")).json()
-        assert {s["name"]: s["shortcut"] for s in state["sounds"]} == {
-            "Applausi": None,
-            "Boo": "F5",
-        }
+        assert [s["shortcut"] for s in listing["sounds"]][:2] == ["Ctrl+1", "Ctrl+2"]
 
-    async def test_shortcuts_are_personal(self, c: Client, h: Harness) -> None:
-        a = await self.add_sound(c, "Applausi")
-        await c.post("/api/soundboard/shortcut", json={"id": a, "key": "Alt+1"})
-        async for bruno in client(h, BRUNO):
+    async def test_favourites_come_first_and_the_keys_follow_the_list(self, c: Client) -> None:
+        ids = [await self.add_sound(c, name) for name in ("alfa", "beta", "gamma")]
+        assert (await self.keys(c)) == {"alfa": "Ctrl+1", "beta": "Ctrl+2", "gamma": "Ctrl+3"}
+        await c.post("/api/soundboard/favorite", json={"id": ids[2]})  # a star moves it up
+        assert (await self.keys(c)) == {"gamma": "Ctrl+1", "alfa": "Ctrl+2", "beta": "Ctrl+3"}
+
+    async def test_keys_are_personal(self, c: Client, h: Harness) -> None:
+        ids = [await self.add_sound(c, name) for name in ("alfa", "beta")]
+        await c.post("/api/soundboard/favorite", json={"id": ids[1]})
+        async for bruno in client(h, BRUNO):  # Bruno has no stars: his list is by name
             state = await (await bruno.get("/api/state")).json()
-            assert state["sounds"][0]["shortcut"] is None
-            r = await bruno.post("/api/soundboard/shortcut", json={"id": a, "key": "Alt+1"})
-            assert r.status == 200  # the same keys are free for him
-
-    async def test_errors(self, c: Client, h: Harness) -> None:
-        a, b = await self.add_sound(c, "Applausi"), await self.add_sound(c, "Boo")
-        await c.post("/api/soundboard/shortcut", json={"id": a, "key": "Alt+1"})
-        r = await c.post("/api/soundboard/shortcut", json={"id": b, "key": "Alt+1"})
-        body = await r.json()
-        assert r.status == 409 and body["error"] == "exists" and "Applausi" in body["message"]
-        for key in ("nonsense", "", 5):
-            r = await c.post("/api/soundboard/shortcut", json={"id": b, "key": key})
-            assert r.status == 400 and (await r.json())["error"] == "bad_request"
-        r = await c.post("/api/soundboard/shortcut", json={"id": "999", "key": "Alt+2"})
-        assert r.status == 404 and ANNA
+            assert {s["name"]: s["shortcut"] for s in state["sounds"]} == {
+                "alfa": "Ctrl+1",
+                "beta": "Ctrl+2",
+            }

@@ -18,18 +18,16 @@ async function draw() {
       el('a', { className: 'btn', href: ORIGIN + '/#/soundboard', target: '_blank' }, 'Open Marione'));
     return;
   }
-  const sounds = (config && config.sounds) || [];
-  box.append(el('p', {}, 'Connected as ', el('b', {}, config ? config.me.name : '…')));
+  const sounds = ((config && config.sounds) || []).filter((x) => x.shortcut);
+  box.append(el('p', {}, 'Connected as ', el('b', {}, config ? config.me.name : '…')),
+    el('p', { className: 'muted' }, 'These keys work on every tab (reload tabs opened before installing):'));
   const list = el('ol');
-  for (let slot = 1; slot <= 4; slot++) {
-    const s = sounds.find((x) => x.slot === slot);
-    list.append(el('li', { className: s ? '' : 'empty' }, el('b', {}, String(slot)),
-      el('span', {}, s ? (s.emoji || '🔊') + ' ' + s.name : 'No sound: choose one on the Soundboard page')));
-  }
-  box.append(el('p', { className: 'muted' }, 'Global slots (work with the browser in the background):'), list,
-    el('button', { onclick: () => ext.tabs.create({ url: 'chrome://extensions/shortcuts' }) }, 'Set the keys'),
+  for (const s of sounds) list.append(el('li', {}, el('b', {}, s.shortcut.replace('Ctrl+', '')), el('span', {}, (s.emoji || '🔊') + ' ' + s.name)));
+  if (!sounds.length) list.append(el('li', { className: 'empty' }, el('span', {}, 'No sounds yet: add some on the Soundboard page.')));
+  box.append(list,
     el('button', { onclick: async () => { await ext.runtime.sendMessage({ type: 'refresh' }); draw(); } }, 'Refresh'),
-    el('p', { className: 'muted' }, 'In the keys page, set each “Global slot” key to scope “Global”. Your other shortcuts work on every tab while the browser is in front.'));
+    el('button', { onclick: () => ext.tabs.create({ url: 'chrome://extensions/shortcuts' }) }, 'Global keys'),
+    el('p', { className: 'muted' }, 'To play with the browser in the background (games), set the scope of “Ctrl+Shift+1…4” to Global there: they play your first four sounds. Star a sound to move it up the list.'));
 }
 
 draw();

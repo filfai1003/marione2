@@ -338,6 +338,18 @@ export function mount(root) {
     const remove = () => confirmDialog(t('music.pl.delTitle'), t('music.pl.delText', { name: p.name }), t('common.delete') + ' 🗑', async (b) => {
       await run(b, async () => { await post('/api/music/playlist/delete', { id: p.id }); toast(t('music.pl.deleted')); openId = null; detail = null; await loadLists(); });
     });
+    // Paste a YouTube, Suno or other link to put the song straight into this playlist.
+    const link = h('input', { type: 'url', placeholder: t('music.pl.linkPh'), 'aria-label': t('music.pl.linkPh'), autocomplete: 'off', required: true });
+    const addLink = btn(t('music.pl.addLink'), 'primary', { type: 'submit' });
+    const linkForm = canEdit ? h('form', { class: 'pl-link', onsubmit: (e) => {
+      e.preventDefault();
+      if (!link.value.trim()) return;
+      run(addLink, async () => {
+        const r = await post('/api/music/playlist/add', { id: p.id, link: link.value.trim() });
+        toast(t('music.pl.linkAdded', { title: r.title, name: p.name }));
+        await changed();
+      });
+    } }, link, addLink) : null;
     const list = h('div', { class: 'card tl-card' }, trackList(tracks, { more: rowMenu }));
     if (canEdit) enableDrag(list, tracks, move);
     return [
@@ -353,6 +365,7 @@ export function mount(root) {
             p.count ? btn('＋ ' + t('music.pl.queue'), 'ghost', { onclick: (e) => playList(p, {}, e.currentTarget) }) : null,
             canEdit ? btn('⋯', 'ghost', { 'aria-label': t('music.more', { name: p.name }), 'aria-haspopup': 'menu', 'aria-expanded': 'false',
               onclick: (e) => popover(e.currentTarget, [['✏️', t('music.pl.rename'), rename], ['🗑', t('music.pl.delete'), remove, 'danger']]) }) : null))),
+      linkForm,
       tracks.length ? list : empty('🎼', t('music.pl.noSongs')),
     ];
   }
