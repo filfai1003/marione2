@@ -9,6 +9,8 @@ description = "Marione: the Discord bot that keeps the server alive."
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "discord.py[voice]>=2.4",
+  # davey 0.2.0 (2026-11-02) made the bot "speak" in voice with no audible sound: stay on 0.1.x.
+  "davey>=0.1.7,<0.2",
   "asyncpg>=0.29",
   "httpx>=0.27",
   "pydantic>=2.7",
