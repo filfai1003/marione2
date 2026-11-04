@@ -6,7 +6,7 @@ import { post } from './api.js';
 import { handleError, refreshState } from './data.js';
 import { toast } from './toast.js';
 import { t } from './i18n.js';
-import { btn, modal } from './ui.js';
+import { btn, modal, chipGroup } from './ui.js';
 
 const NAMED = {
   ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right', Insert: 'Insert', Home: 'Home', End: 'End',
@@ -56,20 +56,27 @@ export function shortcutModal(sound) {
   const shown = h('kbd', { class: 'kbd-big', 'aria-live': 'polite' });
   const draw = () => { shown.textContent = combo || t('board.shortcutNone'); shown.classList.toggle('empty', !combo); };
   draw();
+  let slot = sound.slot || null;
   const save = async (key, close, b) => {
     b.disabled = true;
     try {
-      await post('/api/soundboard/shortcut', { id: sound.id, key });
-      toast(key ? t('board.shortcutSaved', { key }) : t('board.shortcutRemoved'));
+      if (key !== (sound.shortcut || null)) await post('/api/soundboard/shortcut', { id: sound.id, key });
+      if (slot !== (sound.slot || null)) await post('/api/soundboard/slot', { id: sound.id, slot });
+      toast(t('board.shortcutSaved', { key: [key, slot ? t('board.slotName', { n: slot }) : null].filter(Boolean).join(' · ') || '—' }));
       await refreshState();
+      window.postMessage({ type: 'marione-refresh' }, location.origin); // the extension picks up the change
       close();
     } catch (e) { handleError(e); } finally { b.disabled = false; }
   };
-  const body = h('div', { class: 'stack' }, h('p', null, t('board.shortcutHint')), shown, h('p', { class: 'muted small' }, t('board.shortcutTip')));
+  const slots = chipGroup([['0', t('board.slotNone')], ...[1, 2, 3, 4].map((n) => [String(n), String(n)])], String(slot || 0),
+    (k) => { slot = Number(k) || null; }, t('board.slotLabel'));
+  const body = h('div', { class: 'stack' }, h('p', null, t('board.shortcutHint')), shown, h('p', { class: 'muted small' }, t('board.shortcutTip')),
+    h('div', { class: 'field' }, h('span', { class: 'field-label' }, t('board.slotLabel')), slots,
+      h('span', { class: 'hint' }, t('board.slotHint'))));
   const { dlg } = modal(t('board.shortcutTitle', { name: sound.name }), body, (close) => [
     sound.shortcut ? btn(t('board.shortcutClear'), 'ghost', { onclick: (e) => save(null, close, e.currentTarget) }) : null,
     btn(t('common.cancel'), 'ghost', { onclick: close }),
-    btn(t('common.save'), 'primary', { onclick: (e) => { if (combo) save(combo, close, e.currentTarget); else shown.focus(); } }),
+    btn(t('common.save'), 'primary', { onclick: (e) => save(combo, close, e.currentTarget) }),
   ]);
   dlg.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' || e.key === 'Tab') return; // Esc closes the dialog, Tab moves between buttons

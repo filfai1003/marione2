@@ -30,7 +30,9 @@ async def protect(
     request: web.Request, handler: Callable[[web.Request], Awaitable[web.StreamResponse]]
 ) -> web.StreamResponse:
     """Refuse cross-site writes, then add the security headers to every answer."""
-    if request.method not in ("GET", "HEAD", "OPTIONS"):
+    # A bearer token (the browser extension) is not a cookie: nothing to forge across sites.
+    bearer = request.headers.get("Authorization", "").startswith("Bearer ")
+    if request.method not in ("GET", "HEAD", "OPTIONS") and not bearer:
         origin = request.headers.get("Origin")
         if origin is not None and origin.split("://", 1)[-1] != request.host:
             return api.fail(403, "forbidden", "Request from another site.")

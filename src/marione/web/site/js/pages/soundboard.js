@@ -7,6 +7,7 @@ import { toast } from '../toast.js';
 import { t, locale } from '../i18n.js';
 import { pageHead, notice, btn, nameModal, confirmDialog, pickFile, searchBox, chipGroup, empty, preview, popover } from '../ui.js';
 import { shortcutModal } from '../shortcuts.js';
+import { openExtension } from '../extension.js';
 
 /** Upload modal for a file (also used by the global drag & drop). */
 export function openAdd(file) {
@@ -31,7 +32,8 @@ export function openAdd(file) {
 
 export function mount(root) {
   const addBtn = btn('＋ ' + t('board.addSound'), 'primary', { onclick: () => pickFile(openAdd) });
-  root.append(pageHead(t('board.title'), t('board.sub'), addBtn));
+  const extBtn = btn('🔌 ' + t('ext.button'), 'ghost', { onclick: () => openExtension() });
+  root.append(pageHead(t('board.title'), t('board.sub'), h('div', { class: 'page-head-actions' }, extBtn, addBtn)));
   const off = h('div'), body = h('div', { class: 'stack' });
   root.append(off, body);
   let filter = 'all', query = '';
@@ -103,7 +105,8 @@ export function mount(root) {
       onclick: (e) => play(s, e.currentTarget.closest('.tile')) },
       h('span', { class: 'tile-emoji', 'aria-hidden': 'true' }, s.emoji || '🔊'),
       h('span', { class: 'tile-name' }, s.name), h('small', null, (on ? '🎧 ' : '') + fmtDur(s.durationMs)),
-      s.shortcut ? h('kbd', { class: 'tile-key', title: t('board.shortcut') }, s.shortcut) : null);
+      s.shortcut || s.slot ? h('kbd', { class: 'tile-key', title: t('board.shortcut') },
+        [s.shortcut, s.slot ? '🌐' + s.slot : null].filter(Boolean).join(' · ')) : null);
     return h('div', { class: 'tile' + (s.fav ? ' fav' : '') + (on ? ' previewing' : '') },
       main,
       h('button', { type: 'button', class: 'tile-star' + (s.fav ? ' on' : ''), 'aria-pressed': String(!!s.fav),

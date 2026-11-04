@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Marione</title>
+  <style>
+    body { font: 14px system-ui, sans-serif; width: 300px; margin: 0; padding: 14px; color: #241f14; background: #fff8e6; }
+    h1 { font-size: 16px; margin: 0 0 8px; }
+    p { margin: 6px 0; }
+    .muted { color: #6b6350; font-size: 12px; }
+    ol { list-style: none; margin: 8px 0; padding: 0; }
+    li { display: flex; gap: 8px; align-items: center; padding: 6px 8px; margin: 4px 0; border: 2px solid #241f14; border-radius: 10px; background: #fff; }
+    li b { width: 18px; text-align: center; }
+    li span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    li.empty { border-style: dashed; color: #6b6350; }
+    button, a.btn { font: 700 13px system-ui, sans-serif; padding: 7px 12px; border: 2px solid #241f14; border-radius: 999px; background: #f2c94c; color: #241f14; cursor: pointer; text-decoration: none; display: inline-block; margin: 2px 4px 2px 0; }
+    #err { color: #b3261e; }
+  </style>
+</head>
+<body>
+  <h1>🍝 Marione</h1>
+  <div id="state"></div>
+  <script src="popup.js"></script>
+</body>
+</html>

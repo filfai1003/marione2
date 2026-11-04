@@ -32,6 +32,7 @@ from marione.ports import GuildMember, PlayOutcome
 from marione.services.library import add_upload
 from marione.web import oauth, session
 from marione.web.deps import WebDeps
+from marione.web.ext_pack import extension_zip
 from marione.web.view import build_state, history, iso, leaderboard, member_json, sounds_json
 
 DEPS = web.AppKey("deps", WebDeps)
@@ -448,9 +449,14 @@ async def board_play(request: web.Request) -> web.Response:
         return err
     if limited := _limited(request, who):
         return limited
+    return await _play_sound(request, who, _int((await _json(request)).get("id")))
+
+
+async def _play_sound(request: web.Request, who: Who, sound_id: int | None) -> web.Response:
+    """Play a soundboard sound in the member's voice channel (shared by the page and the
+    browser extension)."""
     if off := await _feature_off(request, who, "soundboard"):
         return off
-    sound_id = _int((await _json(request)).get("id"))
     svc = _deps(request).services
     audio = await svc.soundboard.audio(sound_id) if sound_id else None
     if audio is None:
@@ -587,6 +593,116 @@ async def board_shortcut(request: web.Request) -> web.Response:
     if not saved:
         return fail(400, "bad_request", t("shortcut_invalid", who.lang))
     return web.json_response({"ok": True, "shortcut": key})
+
+
+async def board_slot(request: web.Request) -> web.Response:
+    """Point one of the extension's four global slots at a sound (`slot: null` frees it)."""
+    who, err = await _auth(request)
+    if err:
+        return err
+    body = await _json(request)
+    sound_id = _int(body.get("id"))
+    slot = body.get("slot")
+    board = _deps(request).services.soundboard
+    if sound_id is None or await board.get(sound_id) is None:
+        return fail(404, "not_found", t("sound_not_found", who.lang))
+    if slot is not None and (isinstance(slot, bool) or not isinstance(slot, int)):
+        return fail(400, "bad_request", t("shortcut_invalid", who.lang))
+    if not await board.set_slot(who.id, sound_id, slot):
+        return fail(400, "bad_request", t("shortcut_invalid", who.lang))
+    return web.json_response({"ok": True, "slot": slot})
+
+
+# --- browser extension: a personal token, and what the extension needs ---------------------------
+
+EXT_TOKEN_DAYS = 365
+
+
+async def _ext_epoch(request: web.Request, uid: int) -> int:
+    value = await _deps(request).services.settings.get_value(f"ext_epoch:{uid}")
+    return value if isinstance(value, int) else 0
+
+
+async def _ext_auth(request: web.Request) -> tuple[Who, web.Response | None]:
+    """The member behind the extension's `Authorization: Bearer <token>` (this token opens only
+    the `/api/ext/…` calls that use this function)."""
+    header = request.headers.get("Authorization", "")
+    nobody = Who(GuildMember(0, "", "", None, False, None), browser_lang(request))
+    data = session.loads(
+        header.removeprefix("Bearer ").strip() if header.startswith("Bearer ") else "",
+        _deps(request).services.config.web_session_secret,
+    )
+    uid = _int(data.get("uid"))
+    if data.get("kind") != "ext" or uid is None or data.get("v") != await _ext_epoch(request, uid):
+        return nobody, fail(401, "unauthorized", t("login_required", nobody.lang))
+    member = _deps(request).guild.member(uid)
+    lang = await _lang(request, uid)
+    if member is None:
+        return nobody, fail(403, "not_in_guild", t("not_in_guild", lang))
+    return Who(member, lang), None
+
+
+async def ext_token(request: web.Request) -> web.Response:
+    """A new token for the extension (the page hands it over; it is never shown to the member)."""
+    who, err = await _auth(request)
+    if err:
+        return err
+    secret = _deps(request).services.config.web_session_secret
+    token = session.dumps(
+        {"uid": who.id, "kind": "ext", "v": await _ext_epoch(request, who.id)},
+        secret,
+        max_age=EXT_TOKEN_DAYS * 24 * 3600,
+    )
+    return web.json_response({"ok": True, "token": token})
+
+
+async def ext_revoke(request: web.Request) -> web.Response:
+    """Disconnect every browser extension of this member."""
+    who, err = await _auth(request)
+    if err:
+        return err
+    await _deps(request).services.settings.set_value(
+        f"ext_epoch:{who.id}", await _ext_epoch(request, who.id) + 1
+    )
+    return web.json_response({"ok": True})
+
+
+async def ext_config(request: web.Request) -> web.Response:
+    who, err = await _ext_auth(request)
+    if err:
+        return err
+    deps = _deps(request)
+    sounds = await sounds_json(deps, who.id)
+    return web.json_response(
+        {
+            "ok": True,
+            "me": {"name": who.member.name},
+            "inVoice": who.member.voice_channel is not None,
+            "sounds": [
+                {k: s[k] for k in ("id", "name", "emoji", "shortcut", "slot")} for s in sounds
+            ],
+        }
+    )
+
+
+async def ext_play(request: web.Request) -> web.Response:
+    who, err = await _ext_auth(request)
+    if err:
+        return err
+    if limited := _limited(request, who):
+        return limited
+    return await _play_sound(request, who, _int((await _json(request)).get("id")))
+
+
+async def ext_download(request: web.Request) -> web.Response:
+    """The extension as a zip, with this site's address written into it."""
+    scheme = "https" if _secure(request) else "http"
+    data = extension_zip(f"{scheme}://{request.host}")
+    return web.Response(
+        body=data,
+        content_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="marione-extension.zip"'},
+    )
 
 
 async def board_rename(request: web.Request) -> web.Response:
@@ -978,11 +1094,23 @@ async def playlists_list(request: web.Request) -> web.Response:
     if err:
         return err
     deps = _deps(request)
-    lists = await deps.services.playlists.catalog()
+    svc = deps.services
+    lists = await svc.playlists.catalog()
     lists.sort(key=lambda p: (p.owner_id != who.id, p.name.lower()))  # theirs first
-    return web.json_response(
-        {"ok": True, "playlists": [_playlist_json(deps, p, who.id) for p in lists]}
-    )
+    covers = await svc.playlists.covers()
+    url = request.query.get("track", "")  # "which of these already hold this song?"
+    holding = await svc.playlists.containing(url) if url else set()
+    items = []
+    for p in lists:
+        item = _playlist_json(deps, p, who.id)
+        item["covers"] = [
+            {"thumbnail": c.thumbnail, "url": c.url, "source": c.source}
+            for c in covers.get(p.id, [])
+        ]
+        if url:
+            item["has"] = p.id in holding
+        items.append(item)
+    return web.json_response({"ok": True, "playlists": items})
 
 
 async def playlist_detail(request: web.Request) -> web.Response:
@@ -1013,16 +1141,20 @@ async def playlist_create(request: web.Request) -> web.Response:
         return limited
     body = await _json(request)
     svc = _deps(request).services
-    first = body.get("track")
-    track = None
-    if isinstance(first, dict):
-        track, bad = await _track_from_body(request, who, first)
-        if bad:
-            return bad
+    many = body.get("tracks")
+    first: list[Any] = many if isinstance(many, list) else [body.get("track")]
+    tracks: list[Track] = []
+    for raw in first[:50]:  # one song, or a whole queue
+        if isinstance(raw, dict):
+            track, bad = await _track_from_body(request, who, raw)
+            if bad:
+                return bad
+            assert track is not None
+            tracks.append(track)
     await svc.ledger.remember_name(who.id, who.member.name)
     try:
         playlist_id = await svc.playlists.create(who.id, str(body.get("name", "")))
-        if track is not None:
+        for track in tracks:
             await svc.playlists.add_track(playlist_id, track)
     except PlaylistError as exc:
         return _playlist_error(exc, who.lang)
@@ -1095,10 +1227,32 @@ async def playlist_remove(request: web.Request) -> web.Response:
     if bad:
         return bad
     assert playlist is not None
-    item_id = _int(body.get("itemId"))
-    if item_id is None or not await _deps(request).services.playlists.remove_track(
-        playlist.id, item_id
-    ):
+    repo = _deps(request).services.playlists
+    url = body.get("url")
+    if isinstance(url, str) and url:  # by link: every copy of that song
+        removed = await repo.remove_url(playlist.id, url) > 0
+    else:
+        item_id = _int(body.get("itemId"))
+        removed = item_id is not None and await repo.remove_track(playlist.id, item_id)
+    if not removed:
+        return fail(404, "not_found", t("track_not_found", who.lang))
+    return web.json_response({"ok": True})
+
+
+async def playlist_move(request: web.Request) -> web.Response:
+    """Drag a song to another place in the playlist (`index` 0 = first)."""
+    who, err = await _auth(request)
+    if err:
+        return err
+    body = await _json(request)
+    playlist, bad = await _playlist(request, who, body.get("id"), edit=True)
+    if bad:
+        return bad
+    assert playlist is not None
+    item_id, index = _int(body.get("itemId")), _int(body.get("index"))
+    if item_id is None or index is None:
+        return fail(400, "bad_request", t("track_not_found", who.lang))
+    if not await _deps(request).services.playlists.move(playlist.id, item_id, index):
         return fail(404, "not_found", t("track_not_found", who.lang))
     return web.json_response({"ok": True})
 
@@ -1577,6 +1731,12 @@ def add_routes(app: web.Application) -> None:
     r.add_post("/api/soundboard/volume", board_volume)
     r.add_post("/api/soundboard/favorite", board_favorite)
     r.add_post("/api/soundboard/shortcut", board_shortcut)
+    r.add_post("/api/soundboard/slot", board_slot)
+    r.add_post("/api/ext/token", ext_token)
+    r.add_post("/api/ext/revoke", ext_revoke)
+    r.add_get("/api/ext/config", ext_config)
+    r.add_post("/api/ext/play", ext_play)
+    r.add_get("/marione-extension.zip", ext_download)
     r.add_post("/api/soundboard/add", board_add)
     r.add_post("/api/soundboard/rename", board_rename)
     r.add_post("/api/soundboard/remove", board_remove)
@@ -1595,6 +1755,7 @@ def add_routes(app: web.Application) -> None:
     r.add_post("/api/music/playlist/delete", playlist_delete)
     r.add_post("/api/music/playlist/add", playlist_add)
     r.add_post("/api/music/playlist/remove", playlist_remove)
+    r.add_post("/api/music/playlist/move", playlist_move)
     r.add_post("/api/music/playlist/play", playlist_play)
     r.add_post("/api/music/{action}", music_control)
     r.add_get("/api/entrance/members", entrance_members)
