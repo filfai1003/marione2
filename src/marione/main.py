@@ -18,6 +18,7 @@ from marione.bot.voice import VoicePlayer, music_source
 from marione.config import load_settings
 from marione.db.pool import Pool, create_pool, migrate
 from marione.games.tables import GameHall
+from marione.media.finder import MediaFinder
 from marione.web import app as web_app
 from marione.web.deps import WebDeps
 
@@ -60,7 +61,11 @@ async def run_bot(services: Services) -> int:
     voice = VoicePlayer(guild)
     voice.hold(services.config.voice_start_delay)
     music = MusicPlayer(
-        voice, services.ytdl, services.music, services.settings, source_factory=music_source
+        voice,
+        MediaFinder(services.ytdl, services.library),
+        services.music,
+        services.settings,
+        source_factory=music_source,
     )
     refunded = await services.games.refund_leftovers()
     if refunded:

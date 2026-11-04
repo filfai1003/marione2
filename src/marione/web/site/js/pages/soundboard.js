@@ -6,6 +6,7 @@ import { run, refreshState, handleError } from '../data.js';
 import { toast } from '../toast.js';
 import { t, locale } from '../i18n.js';
 import { pageHead, notice, btn, nameModal, confirmDialog, pickFile, searchBox, chipGroup, empty, preview, popover } from '../ui.js';
+import { shortcutModal } from '../shortcuts.js';
 
 /** Upload modal for a file (also used by the global drag & drop). */
 export function openAdd(file) {
@@ -91,6 +92,7 @@ export function mount(root) {
       const a = h('a', { href: '/api/soundboard/audio?download=1&id=' + encodeURIComponent(s.id), download: '' });
       document.body.append(a); a.click(); a.remove();
     }],
+    ['⌨️', t('board.shortcut'), () => shortcutModal(s)],
     canEdit ? ['✏️', t('board.edit'), () => rename(s)] : null,
     canDelete ? ['🗑', t('common.delete'), () => remove(s), 'danger'] : null,
   ]);
@@ -100,7 +102,8 @@ export function mount(root) {
     const main = h('button', { type: 'button', class: 'tile-main', title: t('board.playIn'), 'aria-label': t('board.playName', { name: s.name }),
       onclick: (e) => play(s, e.currentTarget.closest('.tile')) },
       h('span', { class: 'tile-emoji', 'aria-hidden': 'true' }, s.emoji || '🔊'),
-      h('span', { class: 'tile-name' }, s.name), h('small', null, (on ? '🎧 ' : '') + fmtDur(s.durationMs)));
+      h('span', { class: 'tile-name' }, s.name), h('small', null, (on ? '🎧 ' : '') + fmtDur(s.durationMs)),
+      s.shortcut ? h('kbd', { class: 'tile-key', title: t('board.shortcut') }, s.shortcut) : null);
     return h('div', { class: 'tile' + (s.fav ? ' fav' : '') + (on ? ' previewing' : '') },
       main,
       h('button', { type: 'button', class: 'tile-star' + (s.fav ? ' on' : ''), 'aria-pressed': String(!!s.fav),

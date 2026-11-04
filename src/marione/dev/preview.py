@@ -23,6 +23,7 @@ from marione.config import Settings
 from marione.db.memory import Fact
 from marione.db.pool import Pool, create_pool, migrate
 from marione.games.tables import GameHall
+from marione.media.finder import MediaFinder
 from marione.ports import GuildMember, PlayOutcome
 from marione.web import app as web_app
 from marione.web.deps import WebDeps
@@ -250,7 +251,11 @@ async def serve(pool: Pool, port: int) -> None:
     guild = FakeGuild()
     await seed(services, guild)
     music = MusicPlayer(
-        FakeVoice(), services.ytdl, services.music, services.settings, source_factory=fake_source
+        FakeVoice(),
+        MediaFinder(services.ytdl, services.library),
+        services.music,
+        services.settings,
+        source_factory=fake_source,
     )
     hall = GameHall(services.games)
     deps = WebDeps(services, guild, dev_user_id=ME, music=music, games=hall)

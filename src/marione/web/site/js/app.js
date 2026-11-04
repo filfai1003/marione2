@@ -7,6 +7,7 @@ import { toast } from './toast.js';
 import { t, getLang, setLang, LANGS, LANG_NAMES, initialLang } from './i18n.js';
 import { preview, popover, closeMenu } from './ui.js';
 import { setMusicEnabled } from './player.js';
+import { installShortcuts } from './shortcuts.js';
 import { playerBar } from './playerbar.js';
 import * as home from './pages/home.js';
 import * as economy from './pages/economy.js';
@@ -211,7 +212,7 @@ function initDrop() {
     e.preventDefault(); depth = 0; veil(false);
     const f = e.dataTransfer.files[0];
     if (!f || !shell || !store.state) return;
-    if (currentKey === 'entrances' && current && current.drop) current.drop(f);
+    if ((currentKey === 'entrances' || currentKey === 'music') && current && current.drop) current.drop(f);
     else if (store.state.modules.soundboard) soundboard.openAdd(f);
     else toast(t('drop.paused'), 'err');
   });
@@ -251,4 +252,5 @@ async function boot() {
 subscribe(onStore);
 window.addEventListener('hashchange', route);
 initDrop();
+installShortcuts();
 boot();
