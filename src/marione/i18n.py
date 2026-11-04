@@ -300,6 +300,81 @@ M: Final[dict[str, dict[str, str]]] = {
         "it": "Non sta suonando niente.",
         "fr": "Rien n'est en cours de lecture.",
     },
+    "track_not_found": {
+        "en": "That song is no longer there.",
+        "it": "Quella canzone non c'è più.",
+        "fr": "Ce morceau n'est plus là.",
+    },
+    "library_full": {
+        "en": "The library is full: delete a song to make room.",
+        "it": "La libreria è piena: elimina una canzone per fare spazio.",
+        "fr": "La bibliothèque est pleine : supprime un morceau pour faire de la place.",
+    },
+    "library_too_large": {
+        "en": "The file is too big (max 24 MB).",
+        "it": "Il file è troppo grande (max 24 MB).",
+        "fr": "Le fichier est trop lourd (24 Mo max).",
+    },
+    "library_invalid": {
+        "en": "That file can't be read: use an mp3, wav or ogg song (3 hours max).",
+        "it": "Non riesco a leggere il file: usa una canzone mp3, wav o ogg (max 3 ore).",
+        "fr": "Ce fichier est illisible : utilise un morceau mp3, wav ou ogg (3 h max).",
+    },
+    "library_forbidden": {
+        "en": "Only whoever uploaded a song (or an admin) can change it.",
+        "it": "Solo chi ha caricato una canzone (o un admin) può modificarla.",
+        "fr": "Seul qui a envoyé un morceau (ou un admin) peut le modifier.",
+    },
+    "playlist_not_found": {
+        "en": "Playlist not found.",
+        "it": "Playlist non trovata.",
+        "fr": "Playlist introuvable.",
+    },
+    "playlist_exists": {
+        "en": "You already have a playlist with this name.",
+        "it": "Hai già una playlist con questo nome.",
+        "fr": "Tu as déjà une playlist de ce nom.",
+    },
+    "playlist_limit": {
+        "en": "The limit has been reached (30 playlists, 200 songs each).",
+        "it": "Raggiunto il limite (30 playlist, 200 canzoni ciascuna).",
+        "fr": "Limite atteinte (30 playlists, 200 morceaux chacune).",
+    },
+    "playlist_name_invalid": {
+        "en": "Give the playlist a name (up to 60 characters).",
+        "it": "Dai un nome alla playlist (massimo 60 caratteri).",
+        "fr": "Donne un nom à la playlist (60 caractères max).",
+    },
+    "playlist_forbidden": {
+        "en": "Only the owner of a playlist (or an admin) can change it.",
+        "it": "Solo chi ha creato la playlist (o un admin) può modificarla.",
+        "fr": "Seul le créateur de la playlist (ou un admin) peut la modifier.",
+    },
+    "playlist_empty": {
+        "en": "This playlist has no songs yet.",
+        "it": "Questa playlist non ha ancora canzoni.",
+        "fr": "Cette playlist est encore vide.",
+    },
+    "playlist_added": {
+        "en": "➕ Added to **{name}**.",
+        "it": "➕ Aggiunta a **{name}**.",
+        "fr": "➕ Ajouté à **{name}**.",
+    },
+    "playlist_playing": {
+        "en": "🎶 **{name}**: {count} songs on.",
+        "it": "🎶 **{name}**: {count} canzoni in riproduzione.",
+        "fr": "🎶 **{name}** : {count} morceaux lancés.",
+    },
+    "shortcut_taken": {
+        "en": "These keys already play “{name}”.",
+        "it": "Questi tasti suonano già «{name}».",
+        "fr": "Ces touches jouent déjà « {name} ».",
+    },
+    "shortcut_invalid": {
+        "en": "That key combination can't be used.",
+        "it": "Questa combinazione di tasti non è utilizzabile.",
+        "fr": "Cette combinaison de touches n'est pas utilisable.",
+    },
     "music_queue_title": {"en": "🎶 **Queue**", "it": "🎶 **Coda**", "fr": "🎶 **File d'attente**"},
     "music_next_empty": {
         "en": "Nothing after this one.",

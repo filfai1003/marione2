@@ -10,8 +10,10 @@ from marione.db.habits import HabitsRepo
 from marione.db.heists import HeistRepo
 from marione.db.insight import InsightRepo
 from marione.db.ledger import Ledger
+from marione.db.library import LibraryRepo
 from marione.db.memory import MemoryRepo
 from marione.db.music import MusicRepo
+from marione.db.playlists import PlaylistRepo
 from marione.db.pool import Pool
 from marione.db.roles import RolesRepo
 from marione.db.settings import SettingsRepo
@@ -38,6 +40,8 @@ class Services:
     chatlog: ChatLog
     insight: InsightRepo
     music: MusicRepo
+    library: LibraryRepo
+    playlists: PlaylistRepo
     habits: HabitsRepo
     ytdl: Ytdl
     memory: MemoryRepo
@@ -80,6 +84,8 @@ def build_services(config: Settings, pool: Pool) -> Services:
         chatlog=ChatLog(pool),
         insight=InsightRepo(pool),
         music=MusicRepo(pool),
+        library=LibraryRepo(pool),
+        playlists=PlaylistRepo(pool),
         habits=HabitsRepo(pool),
         ytdl=Ytdl(config.ytdlp_cookies, config.ytdlp_proxy),
         memory=MemoryRepo(pool),

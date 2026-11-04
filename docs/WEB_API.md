@@ -82,6 +82,7 @@ Liste paginate (mai liste infinite): `offset` (da 0) e `limit` (1–50, predefin
 `GET /api/soundboard/list` → `{"ok":true,"sounds":[…],"volume":80}` (preferiti per primi, poi per nome).
 `GET /api/soundboard/audio?id=7` → il file audio (`&download=1` lo manda come allegato col nome del suono; chiunque).
 `POST /api/soundboard/play` `{"id":"7"}`; `stop` `{}`; `volume` `{"percent":80}`; `favorite` `{"id":"7"}` (toggle).
+`POST /api/soundboard/shortcut` `{"id":"7","key":"Alt+1"}` (`key: null` removes it) → `{"ok":true,"shortcut":"Alt+1"}`. Personal to the member: each sound in `sounds` (list and `/api/state`) carries `"shortcut": "Alt+1"|null`. Keys are `[Ctrl+][Alt+][Shift+]` + one of `A–Z`, `0–9`, `F1–F12`, `Num0–Num9`, `NumAdd/NumSubtract/NumMultiply/NumDivide/NumDecimal`, `Up/Down/Left/Right`, `Insert/Home/End/PageUp/PageDown` (the page builds them from `KeyboardEvent.code`). Errors: `not_found`, `bad_request` (invalid key), `exists` (409: the key already opens another of their sounds, the message names it). The page listens for them on every page and calls `play`.
 `POST /api/soundboard/add` multipart: `name` (1–40), `emoji` (opzionale), `file` (mp3/wav/ogg, ≤ 8 MB, ≤ 30 s). Tutti possono aggiungere.
 `POST /api/soundboard/rename` `{"id":"7","name":"Nuovo","emoji":"🎺"}` — solo admin (nome e icona).
 `POST /api/soundboard/remove` `{"id":"7"}` — **solo admin** (altrimenti `forbidden`).
@@ -92,6 +93,26 @@ Liste paginate (mai liste infinite): `offset` (da 0) e `limit` (1–50, predefin
 `GET /api/music/search?q=` → `{"ok":true,"results":[{"title","url","duration","channel","thumbnail","source"}]}`: 10 risultati per un titolo, 1 per un link. Errore `error` (502) se le piattaforme rifiutano.
 `POST /api/music/play` `{…un risultato…, "now": false}` → `{"ok":true,"status":"playing|queued","position":0,"message":"…"}`; `now:true` la suona subito. Errori: `not_in_voice`, `busy` (musica per altri in un altro canale), `limit` (coda piena), `error`.
 `POST /api/music/skip|stop|pause|volume|remove` (`volume`: `{"percent":50}`, `remove`: `{"index":0}`) → stato aggiornato + `message`.
+
+### Link supportati
+
+`/api/music/search?q=<link>` e `/api/music/play` accettano: YouTube, SoundCloud, **Suno** (`suno.com/song/<id>`, `suno.com/s/<codice>`: titolo, artista, copertina e durata vengono dall'API pubblica dei clip di Suno), qualsiasi sito che yt-dlp conosce, un **file audio diretto** (`.mp3 .m4a .ogg .wav .flac …`) e pagine con un player (`og:audio`, `<audio src>`). Gli indirizzi non pubblici (rete interna, `file:`) sono rifiutati.
+
+### Libreria (mp3 caricati, sempre presenti)
+
+Condivisa dal server; ogni brano ha `url: "upload:<id>"` e `source: "upload"` e si suona/accoda/mette in playlist con gli stessi endpoint di una canzone da link (`play` rilegge titolo e durata dal database).
+`GET /api/music/library` → `{"ok":true,"tracks":[{"title","url":"upload:3","duration","channel":"<chi l'ha caricato>","thumbnail":null,"source":"upload","own":true,"size":4123456}],"count","usedBytes","maxFiles","maxBytes","maxFileBytes"}` (più recenti prima).
+`POST /api/music/library/add` multipart: `name` (titolo, ≤ 200), `file` (mp3/wav/ogg, ≤ 24 MB, ≤ 3 ore) → `{"ok":true,"track":{…}}`. Errori: `too_large` (413), `invalid_audio` (422), `limit` (409, libreria piena: 300 file o 400 MB), `feature_off`.
+`POST /api/music/library/rename` `{"id":"3","title":"…"}` e `remove` `{"id":"3"}` — solo chi l'ha caricato o un admin (`forbidden`). Eliminare un brano lo toglie anche dalle playlist.
+`GET /api/music/library/audio?id=3` (`&download=1`) → il file.
+
+### Playlist
+
+Tutti le vedono e le suonano; le modifica solo chi le ha create (o un admin, altrimenti `forbidden`). Max 30 per membro, 200 brani l'una; il nome è unico per membro (`exists`).
+`GET /api/music/playlists` → `{"ok":true,"playlists":[{"id":"1","name","owner","own","count","duration"}]}` (le proprie prima).
+`GET /api/music/playlist?id=1` → `{"ok":true,"playlist":{…},"tracks":[{"itemId":"9","title","url","duration","channel","thumbnail","source"}]}`.
+`POST /api/music/playlist/create` `{"name":"Cena","track":{…opzionale…}}` → `{"ok":true,"playlist":{…}}`; `rename` `{"id","name"}`; `delete` `{"id"}`; `add` `{"id","track":{title,url,duration,channel,thumbnail}}` → `{"ok":true,"message"}`; `remove` `{"id","itemId"}`.
+`POST /api/music/playlist/play` `{"id":"1","shuffle":false,"replace":false}` mette in coda tutti i brani (`replace` svuota prima la coda, `shuffle` li mescola; quelli che non si riescono a riprodurre sono saltati, la coda tiene 50 brani) → come `music/skip` più `"added"` e `"skipped"`. Errori: `not_in_voice`, `busy`, `limit`, `error`, `bad_request` (vuota).
 
 ## Suoni d'entrata — SOLO ADMIN
 

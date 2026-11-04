@@ -169,7 +169,7 @@ export const EMOJI = ['🔊', '🎺', '👏', '🥁', '🎸', '🎹', '😂', '�
  * opts: {title, file?, name, emoji?, withEmoji, okLabel, onSubmit({name, emoji}, btn)}
  */
 export function nameModal(opts) {
-  const name = h('input', { type: 'text', maxlength: '40', required: true, value: opts.name || '', autocomplete: 'off' });
+  const name = h('input', { type: 'text', maxlength: String(opts.maxLength || 40), required: true, value: opts.name || '', autocomplete: 'off' });
   const emoji = h('input', { type: 'text', maxlength: '8', class: 'emoji-in', value: opts.emoji || '', placeholder: '🔊', 'aria-label': t('sound.emoji') });
   const err = fieldError();
   const picker = h('div', { class: 'emoji-grid', role: 'group', 'aria-label': t('sound.pickEmoji') }, EMOJI.map((e) =>

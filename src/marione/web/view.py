@@ -75,6 +75,7 @@ async def sounds_json(deps: WebDeps, user_id: int) -> list[dict[str, Any]]:
             "durationMs": s.duration_ms,
             "fav": s.fav,
             "own": s.creator_id == user_id,
+            "shortcut": s.shortcut,
         }
         for s in await deps.services.soundboard.catalog(user_id)
     ]

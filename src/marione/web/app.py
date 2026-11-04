@@ -12,12 +12,14 @@ SITE = Path(__file__).parent / "site"
 # Slim images have no system MIME table and Python 3.12 does not know WebP by itself; aiohttp
 # guesses static file types with its own table.
 web_fileresponse.CONTENT_TYPES.add_type("image/webp", ".webp")
-MAX_UPLOAD = 9 * 1024 * 1024  # one sound is capped at 8 MB; the rest is form overhead
+# A soundboard sound is capped at 8 MB and a library song at 24 MB; the rest is form overhead.
+MAX_UPLOAD = 25 * 1024 * 1024
 
 CSP = (
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' "
     "https://fonts.googleapis.com; font-src https://fonts.gstatic.com; "
-    "img-src 'self' data: https://cdn.discordapp.com https://*.ytimg.com https://*.sndcdn.com; "
+    "img-src 'self' data: https://cdn.discordapp.com https://*.ytimg.com https://*.sndcdn.com "
+    "https://*.suno.ai https://*.suno.com; "
     "media-src 'self' blob:; "
     "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 )

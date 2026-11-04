@@ -6,16 +6,20 @@ proxy (`YTDLP_PROXY`) help; title searches fall back to SoundCloud when YouTube 
 """
 
 import asyncio
+import html
 import importlib.util
+import ipaddress
 import logging
 import re
 import shutil
+import socket
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urljoin, urlsplit
 
+import httpx
 import yt_dlp
 import yt_dlp.networking
 import yt_dlp.networking.exceptions
@@ -38,6 +42,14 @@ def clean_title(title: str) -> str:
     return re.sub(r"\s+", " ", cleaned).strip(" -–") or title
 
 
+UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
+AUDIO_FILE_RE = re.compile(r"\.(mp3|m4a|aac|ogg|oga|opus|wav|flac|weba)$", re.I)
+SUNO_CLIP = "https://studio-api.prod.suno.com/api/clip/{}"
+META_TAG_RE = re.compile(r"<meta\s+([^>]*?)/?>", re.I)
+ATTR_RE = re.compile(r"""([\w:.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')""")
+AUDIO_TAG_RE = re.compile(r"""<(?:audio|source)\s+[^>]*?src\s*=\s*["']([^"']+)["']""", re.I)
+PAGE_LIMIT = 1_500_000  # bytes of a web page read when looking for its audio
+BROWSER = "Mozilla/5.0 (compatible; Marione/2.0; +music-player)"
 MAX_DURATION = 3 * 3600  # longer than this is a live stream or a podcast: not for the player
 
 
@@ -71,7 +83,52 @@ def source_of(url: str) -> str:
         return "youtube"
     if host.endswith("soundcloud.com"):
         return "soundcloud"
+    if host in ("suno.com", "suno.ai") or host.endswith((".suno.com", ".suno.ai")):
+        return "suno"
     return host or "web"
+
+
+def is_public_url(url: str) -> bool:
+    """Is this an http(s) address of the open internet? (Never fetch the server's own network.)"""
+    parts = urlsplit(url)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        return False
+    try:
+        infos = socket.getaddrinfo(parts.hostname, None)
+        return bool(infos) and all(
+            ipaddress.ip_address(str(i[4][0]).split("%")[0]).is_global for i in infos
+        )
+    except (OSError, ValueError):
+        return False
+
+
+def suno_id(url: str) -> str | None:
+    """The song id in a Suno link (suno.com/song/<id>, cdn1.suno.ai/<id>.mp3…)."""
+    if source_of(url) != "suno":
+        return None
+    match = UUID_RE.search(urlsplit(url).path)
+    return match.group(0).lower() if match else None
+
+
+def _metas(page: str) -> dict[str, str]:
+    """The `<meta property|name=… content=…>` tags of a page (the first of each wins)."""
+    found: dict[str, str] = {}
+    for tag in META_TAG_RE.finditer(page):
+        attrs = {m[0].lower(): (m[1] or m[2]) for m in ATTR_RE.findall(tag.group(1))}
+        key, content = attrs.get("property") or attrs.get("name"), attrs.get("content")
+        if key and content:
+            found.setdefault(key.lower(), content.replace("&amp;", "&"))
+    return found
+
+
+def _https_of(url: str, site: str) -> str | None:
+    """`url` if it is an https address on `site` (the page only loads covers from known hosts)."""
+    return url if url.startswith("https://") and source_of(url) == site else None
+
+
+def _title_of(url: str) -> str:
+    stem = Path(unquote(urlsplit(url).path)).stem
+    return re.sub(r"[_\s]+", " ", stem).strip()[:200] or "audio"
 
 
 def _thumb(entry: dict[str, Any]) -> str | None:
@@ -154,18 +211,135 @@ class Ytdl:
             raise MusicError(str(last)) from last
         return []
 
+    @staticmethod
+    def _fetch(url: str) -> tuple[str, str]:
+        """(final address, page text) of a web page; the text is empty for an audio file."""
+        if not is_public_url(url):
+            raise MusicError("this address cannot be opened")
+        try:
+            with (
+                httpx.Client(
+                    follow_redirects=True, timeout=10, headers={"User-Agent": BROWSER}
+                ) as client,
+                client.stream("GET", url) as response,
+            ):
+                final = str(response.url)
+                if not is_public_url(final):
+                    raise MusicError("this address cannot be opened")
+                if response.headers.get("content-type", "").startswith("audio/"):
+                    return final, ""
+                response.raise_for_status()
+                body = b""
+                for chunk in response.iter_bytes():
+                    body += chunk
+                    if len(body) >= PAGE_LIMIT:
+                        break
+                return final, body.decode(response.encoding or "utf-8", "replace")
+        except httpx.HTTPError as exc:
+            raise MusicError(f"the page does not answer: {exc}") from exc
+
+    @staticmethod
+    def _suno_clip(song: str) -> dict[str, Any]:
+        """Suno's public clip data (title, artist, cover, length, audio address)."""
+        try:
+            response = httpx.get(
+                SUNO_CLIP.format(song), timeout=10, headers={"User-Agent": BROWSER}
+            )
+            response.raise_for_status()
+            data = response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise MusicError(f"Suno does not answer: {exc}") from exc
+        return data if isinstance(data, dict) else {}
+
+    def _suno_track(self, url: str) -> Track:
+        song = suno_id(url)
+        if song is None:  # a short link (suno.com/s/…): the page it leads to has the song
+            final, text = self._fetch(url)
+            song = suno_id(final) or next(iter(UUID_RE.findall(text)), None)
+            if song is None:
+                raise MusicError("this Suno link has no song")
+        song = song.lower()
+        clip = self._suno_clip(song)
+        title = html.unescape(str(clip.get("title") or "")).strip()
+        by = html.unescape(str(clip.get("display_name") or "")).strip()
+        length = (clip.get("metadata") or {}).get("duration")
+        image = str(clip.get("image_url") or f"https://cdn2.suno.ai/image_{song}.jpeg")
+        return Track(
+            title=(title or f"Suno song {song[:8]}")[:200],
+            url=f"https://suno.com/song/{song}",
+            duration=int(length) if isinstance(length, int | float) and length > 0 else None,
+            channel=by or None,
+            thumbnail=_https_of(image, "suno"),
+            source="suno",
+        )
+
+    def _suno_stream(self, track: Track) -> Stream:
+        song = suno_id(track.url)
+        if song is None:
+            raise MusicError("this Suno link has no song")
+        clip = self._suno_clip(song)
+        media = [m.get("url") for m in clip.get("media_urls") or [] if isinstance(m, dict)]
+        for candidate in [*media, clip.get("audio_url")]:
+            if isinstance(candidate, str) and candidate.startswith("https://"):
+                stream = Stream(candidate, {})
+                if "/forbidden" not in candidate and self._playable(stream):
+                    return stream
+        raise MusicError("Suno did not hand out the audio of this song")
+
+    def _page_audio(self, url: str) -> tuple[str, Track] | None:
+        """Look inside a web page for its audio (`og:audio`, `<audio src>`…): (audio address,
+        track for the page). None if the page has none."""
+        try:
+            final, text = self._fetch(url)
+        except MusicError:
+            return None
+        if not text:  # the link itself is an audio file
+            return final, Track(_title_of(final), final, source=source_of(final))
+        metas = _metas(text)
+        candidates = [
+            metas[k]
+            for k in ("og:audio", "og:audio:url", "og:audio:secure_url", "twitter:player:stream")
+            if k in metas
+        ]
+        candidates += [
+            metas[k]
+            for k in ("og:video", "og:video:url", "og:video:secure_url")
+            if k in metas and AUDIO_FILE_RE.search(urlsplit(metas[k]).path)
+        ]
+        candidates += AUDIO_TAG_RE.findall(text)
+        for candidate in candidates:
+            audio = urljoin(final, candidate.replace("&amp;", "&"))
+            if is_public_url(audio):
+                heading = re.search(r"<title[^>]*>([^<]+)</title>", text, re.I)
+                title = (metas.get("og:title") or (heading[1] if heading else "")).strip()
+                return audio, Track(
+                    title=(title or _title_of(final))[:200],
+                    url=final,
+                    thumbnail=_https_of(metas.get("og:image", ""), "suno"),
+                    source=source_of(final),
+                )
+        return None
+
     def _resolve_sync(self, url: str) -> Track:
+        if source_of(url) == "suno":
+            return self._suno_track(url)
+        if AUDIO_FILE_RE.search(urlsplit(url).path) and is_public_url(url):
+            return Track(_title_of(url), url, source=source_of(url))
         try:
             info = self._extract(url, extract_flat="in_playlist")
+            entries = info.get("entries")
+            if isinstance(entries, list) and entries:  # a playlist link: its first song
+                info = entries[0]
+            track = track_from(info)
+            problem = "this link has no playable audio"
         except yt_dlp.utils.DownloadError as exc:
-            raise MusicError(str(exc)) from exc
-        entries = info.get("entries")
-        if isinstance(entries, list) and entries:  # a playlist link: its first song
-            info = entries[0]
-        track = track_from(info)
-        if track is None:
-            raise MusicError("this link has no playable audio")
-        return track
+            track, problem = None, str(exc)
+        if track is not None:
+            return track
+        # yt-dlp does not know the site: maybe the page itself carries an audio player.
+        if (found := self._page_audio(url)) is not None:
+            return found[1]
+        raise MusicError(problem)
 
     @staticmethod
     def _stream_of(info: dict[str, Any]) -> Stream | None:
@@ -191,7 +365,17 @@ class Ytdl:
             logger.warning("the audio stream does not answer: %s", exc)
             return False
 
+    def _direct_stream(self, url: str) -> Stream:
+        stream = Stream(url, {})
+        if not is_public_url(url) or not self._playable(stream):
+            raise MusicError("this address does not hand out audio")
+        return stream
+
     def _stream_sync(self, track: Track) -> Stream:
+        if track.source == "suno":
+            return self._suno_stream(track)
+        if AUDIO_FILE_RE.search(urlsplit(track.url).path):
+            return self._direct_stream(track.url)
         try:
             stream = self._stream_of(self._extract(track.url, format="bestaudio/best"))
             if stream is not None and (track.source != "youtube" or self._playable(stream)):
@@ -199,6 +383,8 @@ class Ytdl:
             problem = "no audio stream" if stream is None else "the stream refused the download"
         except yt_dlp.utils.DownloadError as exc:
             problem = str(exc)
+        if track.source not in ("youtube", "soundcloud") and (page := self._page_audio(track.url)):
+            return self._direct_stream(page[0])
         if track.source != "youtube":
             raise MusicError(problem)
         # YouTube often refuses server addresses ("sign in to confirm you're not a bot"):

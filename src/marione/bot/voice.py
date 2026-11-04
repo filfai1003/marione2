@@ -46,9 +46,13 @@ def ffmpeg_path() -> str:
 def music_source(url: str, headers: dict[str, str], volume: float) -> Any:
     """A remote audio stream (resolved by yt-dlp) for the music layer; FFmpeg reconnects if the
     connection drops mid-song."""
-    before = "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
-    if headers:
-        before += " -headers " + shlex.quote("".join(f"{k}: {v}\r\n" for k, v in headers.items()))
+    before: str | None = None
+    if url.startswith(("http://", "https://")):  # a file from the library has nothing to reconnect
+        before = "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
+        if headers:
+            before += " -headers " + shlex.quote(
+                "".join(f"{k}: {v}\r\n" for k, v in headers.items())
+            )
     raw = discord.FFmpegPCMAudio(
         url, executable=ffmpeg_path(), before_options=before, options="-vn"
     )

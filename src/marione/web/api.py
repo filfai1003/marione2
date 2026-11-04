@@ -3,6 +3,7 @@
 Every text sent back is in the visitor's language (see `marione.i18n`).
 """
 
+import random
 import secrets
 import time
 from dataclasses import dataclass
@@ -16,13 +17,19 @@ from aiohttp.web_request import FileField
 from marione.agent import persona
 from marione.agent import prompt as prompts
 from marione.bot.texts import rob_line, rob_refusal
+from marione.db import library as library_db
+from marione.db.library import LibraryError, Upload
+from marione.db.playlists import Playlist, PlaylistError
 from marione.db.settings import FEATURES
+from marione.db.soundboard import ShortcutTaken
 from marione.db.sounds import MAX_BYTES, MAX_PER_MEMBER, SoundError
 from marione.domain.habits import describe as describe_habits
 from marione.i18n import LANGS, normalize, t, unit
 from marione.llm.budget import period_starts
+from marione.media.finder import UPLOAD_PREFIX, UPLOAD_SOURCE, upload_id
 from marione.media.ytdl import MusicError, Track, is_url, source_of
 from marione.ports import GuildMember, PlayOutcome
+from marione.services.library import add_upload
 from marione.web import oauth, session
 from marione.web.deps import WebDeps
 from marione.web.view import build_state, history, iso, leaderboard, member_json, sounds_json
@@ -494,13 +501,15 @@ async def board_favorite(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "fav": fav})
 
 
-async def _read_upload(request: web.Request) -> tuple[dict[str, str], bytes | None]:
+async def _read_upload(
+    request: web.Request, limit: int = MAX_BYTES
+) -> tuple[dict[str, str], bytes | None]:
     form = await request.post()
     fields = {k: v for k, v in form.items() if isinstance(v, str)}
     upload = form.get("file")
     data = None
     if isinstance(upload, FileField):
-        data = upload.file.read(MAX_BYTES + 1)
+        data = upload.file.read(limit + 1)
     return fields, data
 
 
@@ -556,6 +565,28 @@ async def board_add(request: web.Request) -> web.Response:
             },
         }
     )
+
+
+async def board_shortcut(request: web.Request) -> web.Response:
+    """Attach a key combination to a sound for this member (`key: null` removes it)."""
+    who, err = await _auth(request)
+    if err:
+        return err
+    body = await _json(request)
+    sound_id = _int(body.get("id"))
+    key = body.get("key")
+    board = _deps(request).services.soundboard
+    if sound_id is None or await board.get(sound_id) is None:
+        return fail(404, "not_found", t("sound_not_found", who.lang))
+    if key is not None and not isinstance(key, str):
+        return fail(400, "bad_request", t("shortcut_invalid", who.lang))
+    try:
+        saved = await board.set_shortcut(who.id, sound_id, key)
+    except ShortcutTaken as taken:
+        return fail(409, "exists", t("shortcut_taken", who.lang, name=taken.sound))
+    if not saved:
+        return fail(400, "bad_request", t("shortcut_invalid", who.lang))
+    return web.json_response({"ok": True, "shortcut": key})
 
 
 async def board_rename(request: web.Request) -> web.Response:
@@ -667,6 +698,47 @@ async def music_search(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "results": [_track_json(x) for x in tracks]})
 
 
+async def _track_from_body(
+    request: web.Request, who: Who, body: dict[str, Any]
+) -> tuple[Track | None, web.Response | None]:
+    """The song a request names: a link, or a library upload (`upload:<id>`, read from the
+    database, never from what the page says about it)."""
+    url, title = body.get("url"), body.get("title")
+    if isinstance(url, str) and (song := upload_id(url)) is not None:
+        deps = _deps(request)
+        upload = await deps.services.library.get(song)
+        if upload is None:
+            return None, fail(404, "not_found", t("track_not_found", who.lang))
+        return _upload_track(deps, upload), None
+    if not isinstance(url, str) or not is_url(url) or not isinstance(title, str) or not title:
+        return None, fail(400, "bad_request", t("music_not_found", who.lang))
+    duration = _int(body.get("duration"))
+    thumb = body.get("thumbnail")
+    owner = body.get("channel")
+    return (
+        Track(
+            title=title.strip()[:200],
+            url=url,
+            duration=duration if duration and duration > 0 else None,
+            channel=owner if isinstance(owner, str) else None,
+            thumbnail=thumb if isinstance(thumb, str) and thumb.startswith("https://") else None,
+            source=source_of(url),
+        ),
+        None,
+    )
+
+
+def _upload_track(deps: WebDeps, upload: Upload) -> Track:
+    member = deps.guild.member(upload.uploader_id)
+    return Track(
+        title=upload.title,
+        url=f"{UPLOAD_PREFIX}{upload.id}",
+        duration=max(1, round(upload.duration_ms / 1000)),
+        channel=member.name if member else None,
+        source=UPLOAD_SOURCE,
+    )
+
+
 async def music_play(request: web.Request) -> web.Response:
     who, err = await _auth(request)
     if err:
@@ -679,23 +751,13 @@ async def music_play(request: web.Request) -> web.Response:
     if err:
         return err
     body = await _json(request)
-    url, title = body.get("url"), body.get("title")
-    if not isinstance(url, str) or not is_url(url) or not isinstance(title, str) or not title:
-        return fail(400, "bad_request", t("music_not_found", who.lang))
+    track, bad = await _track_from_body(request, who, body)
+    if bad:
+        return bad
+    assert track is not None
     channel = _deps(request).guild.voice_channel_of(who.id)
     if channel is None:
         return fail(409, "not_in_voice", t("not_in_voice", who.lang))
-    duration = _int(body.get("duration"))
-    thumb = body.get("thumbnail")
-    owner = body.get("channel")
-    track = Track(
-        title=title.strip()[:200],
-        url=url,
-        duration=duration if duration and duration > 0 else None,
-        channel=owner if isinstance(owner, str) else None,
-        thumbnail=thumb if isinstance(thumb, str) and thumb.startswith("https://") else None,
-        source=source_of(url),
-    )
     status, position = await player.request(
         track, who.id, who.member.name, channel, now=body.get("now") is True
     )
@@ -750,6 +812,345 @@ async def music_control(request: web.Request) -> web.Response:
         {
             "ok": True,
             "message": plain(message),
+            **player.snapshot(),
+            "volume": await player.volume(),
+        }
+    )
+
+
+# --- music library: uploaded songs, always there -------------------------------------------------
+
+
+def _library_track_json(deps: WebDeps, upload: Upload, uid: int) -> dict[str, Any]:
+    return {
+        **_track_json(_upload_track(deps, upload)),
+        "own": upload.uploader_id == uid,
+        "size": upload.size,
+    }
+
+
+async def library_list(request: web.Request) -> web.Response:
+    who, err = await _auth(request)
+    if err:
+        return err
+    deps = _deps(request)
+    count, used = await deps.services.library.usage()
+    return web.json_response(
+        {
+            "ok": True,
+            "tracks": [
+                _library_track_json(deps, u, who.id) for u in await deps.services.library.catalog()
+            ],
+            "count": count,
+            "usedBytes": used,
+            "maxFiles": library_db.MAX_FILES,
+            "maxBytes": library_db.MAX_TOTAL_BYTES,
+            "maxFileBytes": library_db.MAX_BYTES,
+        }
+    )
+
+
+def _library_error(exc: LibraryError, lang: str) -> web.Response:
+    if exc.code == "full":
+        return fail(409, "limit", t("library_full", lang))
+    if exc.code == "too_large":
+        return fail(413, "too_large", t("library_too_large", lang))
+    return fail(422, "invalid_audio", t("library_invalid", lang))
+
+
+async def library_add(request: web.Request) -> web.Response:
+    who, err = await _auth(request)
+    if err:
+        return err
+    if limited := _limited(request, who):
+        return limited
+    if off := await _feature_off(request, who, "music"):
+        return off
+    fields, data = await _read_upload(request, library_db.MAX_BYTES)
+    if not data:
+        return fail(400, "bad_request", t("file_missing", who.lang))
+    if len(data) > library_db.MAX_BYTES:
+        return fail(413, "too_large", t("library_too_large", who.lang))
+    deps = _deps(request)
+    svc = deps.services
+    await svc.ledger.remember_name(who.id, who.member.name)
+    try:
+        song = await add_upload(svc.library, who.id, fields.get("name", ""), data)
+    except LibraryError as exc:
+        return _library_error(exc, who.lang)
+    upload = await svc.library.get(song)
+    assert upload is not None
+    return web.json_response({"ok": True, "track": _library_track_json(deps, upload, who.id)})
+
+
+async def _own_upload(
+    request: web.Request, who: Who, raw: Any
+) -> tuple[Upload | None, web.Response | None]:
+    """An upload the member may change (their own, or any for an administrator)."""
+    song = _int(raw)
+    upload = await _deps(request).services.library.get(song) if song else None
+    if upload is None:
+        return None, fail(404, "not_found", t("track_not_found", who.lang))
+    if upload.uploader_id != who.id and not who.member.is_admin:
+        return None, fail(403, "forbidden", t("library_forbidden", who.lang))
+    return upload, None
+
+
+async def library_rename(request: web.Request) -> web.Response:
+    who, err = await _auth(request)
+    if err:
+        return err
+    body = await _json(request)
+    upload, bad = await _own_upload(request, who, body.get("id"))
+    if bad:
+        return bad
+    assert upload is not None
+    try:
+        await _deps(request).services.library.rename(upload.id, str(body.get("title", "")))
+    except LibraryError as exc:
+        return _library_error(exc, who.lang)
+    return web.json_response({"ok": True})
+
+
+async def library_remove(request: web.Request) -> web.Response:
+    who, err = await _auth(request)
+    if err:
+        return err
+    upload, bad = await _own_upload(request, who, (await _json(request)).get("id"))
+    if bad:
+        return bad
+    assert upload is not None
+    await _deps(request).services.library.remove(upload.id)
+    return web.json_response({"ok": True})
+
+
+async def library_audio(request: web.Request) -> web.Response:
+    who, err = await _auth(request)
+    if err:
+        return err
+    song = _int(request.query.get("id"))
+    audio = await _deps(request).services.library.audio(song) if song else None
+    if audio is None:
+        return fail(404, "not_found", t("track_not_found", who.lang))
+    download = (
+        _download_name(audio.title, audio.content_type) if request.query.get("download") else None
+    )
+    return _audio_response(audio.content_type, audio.data, download)
+
+
+# --- playlists -----------------------------------------------------------------------------------
+
+
+def _playlist_json(deps: WebDeps, playlist: Playlist, uid: int) -> dict[str, Any]:
+    owner = deps.guild.member(playlist.owner_id)
+    return {
+        "id": str(playlist.id),
+        "name": playlist.name,
+        "owner": owner.name if owner else None,
+        "own": playlist.owner_id == uid,
+        "count": playlist.count,
+        "duration": playlist.duration,
+    }
+
+
+async def _playlist(
+    request: web.Request, who: Who, raw: Any, *, edit: bool = False
+) -> tuple[Playlist | None, web.Response | None]:
+    playlist_id = _int(raw)
+    playlist = await _deps(request).services.playlists.get(playlist_id) if playlist_id else None
+    if playlist is None:
+        return None, fail(404, "not_found", t("playlist_not_found", who.lang))
+    if edit and playlist.owner_id != who.id and not who.member.is_admin:
+        return None, fail(403, "forbidden", t("playlist_forbidden", who.lang))
+    return playlist, None
+
+
+def _playlist_error(exc: PlaylistError, lang: str) -> web.Response:
+    if exc.code == "exists":
+        return fail(409, "exists", t("playlist_exists", lang))
+    if exc.code == "limit":
+        return fail(409, "limit", t("playlist_limit", lang))
+    return fail(400, "bad_request", t("playlist_name_invalid", lang))
+
+
+async def playlists_list(request: web.Request) -> web.Response:
+    who, err = await _auth(request)
+    if err:
+        return err
+    deps = _deps(request)
+    lists = await deps.services.playlists.catalog()
+    lists.sort(key=lambda p: (p.owner_id != who.id, p.name.lower()))  # theirs first
+    return web.json_response(
+        {"ok": True, "playlists": [_playlist_json(deps, p, who.id) for p in lists]}
+    )
+
+
+async def playlist_detail(request: web.Request) -> web.Response:
+    who, err = await _auth(request)
+    if err:
+        return err
+    playlist, bad = await _playlist(request, who, request.query.get("id"))
+    if bad:
+        return bad
+    assert playlist is not None
+    deps = _deps(request)
+    items = await deps.services.playlists.items(playlist.id)
+    return web.json_response(
+        {
+            "ok": True,
+            "playlist": _playlist_json(deps, playlist, who.id),
+            "tracks": [{"itemId": str(i.id), **_track_json(i.track)} for i in items],
+        }
+    )
+
+
+async def playlist_create(request: web.Request) -> web.Response:
+    """Create a playlist, optionally with a first song (`track`)."""
+    who, err = await _auth(request)
+    if err:
+        return err
+    if limited := _limited(request, who):
+        return limited
+    body = await _json(request)
+    svc = _deps(request).services
+    first = body.get("track")
+    track = None
+    if isinstance(first, dict):
+        track, bad = await _track_from_body(request, who, first)
+        if bad:
+            return bad
+    await svc.ledger.remember_name(who.id, who.member.name)
+    try:
+        playlist_id = await svc.playlists.create(who.id, str(body.get("name", "")))
+        if track is not None:
+            await svc.playlists.add_track(playlist_id, track)
+    except PlaylistError as exc:
+        return _playlist_error(exc, who.lang)
+    playlist = await svc.playlists.get(playlist_id)
+    assert playlist is not None
+    return web.json_response(
+        {"ok": True, "playlist": _playlist_json(_deps(request), playlist, who.id)}
+    )
+
+
+async def playlist_rename(request: web.Request) -> web.Response:
+    who, err = await _auth(request)
+    if err:
+        return err
+    body = await _json(request)
+    playlist, bad = await _playlist(request, who, body.get("id"), edit=True)
+    if bad:
+        return bad
+    assert playlist is not None
+    try:
+        await _deps(request).services.playlists.rename(playlist.id, str(body.get("name", "")))
+    except PlaylistError as exc:
+        return _playlist_error(exc, who.lang)
+    return web.json_response({"ok": True})
+
+
+async def playlist_delete(request: web.Request) -> web.Response:
+    who, err = await _auth(request)
+    if err:
+        return err
+    playlist, bad = await _playlist(request, who, (await _json(request)).get("id"), edit=True)
+    if bad:
+        return bad
+    assert playlist is not None
+    await _deps(request).services.playlists.delete(playlist.id)
+    return web.json_response({"ok": True})
+
+
+async def playlist_add(request: web.Request) -> web.Response:
+    who, err = await _auth(request)
+    if err:
+        return err
+    if limited := _limited(request, who):
+        return limited
+    body = await _json(request)
+    playlist, bad = await _playlist(request, who, body.get("id"), edit=True)
+    if bad:
+        return bad
+    assert playlist is not None
+    raw = body.get("track")
+    track, bad = await _track_from_body(request, who, raw if isinstance(raw, dict) else {})
+    if bad:
+        return bad
+    assert track is not None
+    try:
+        await _deps(request).services.playlists.add_track(playlist.id, track)
+    except PlaylistError as exc:
+        return _playlist_error(exc, who.lang)
+    return web.json_response(
+        {"ok": True, "message": plain(t("playlist_added", who.lang, name=playlist.name))}
+    )
+
+
+async def playlist_remove(request: web.Request) -> web.Response:
+    who, err = await _auth(request)
+    if err:
+        return err
+    body = await _json(request)
+    playlist, bad = await _playlist(request, who, body.get("id"), edit=True)
+    if bad:
+        return bad
+    assert playlist is not None
+    item_id = _int(body.get("itemId"))
+    if item_id is None or not await _deps(request).services.playlists.remove_track(
+        playlist.id, item_id
+    ):
+        return fail(404, "not_found", t("track_not_found", who.lang))
+    return web.json_response({"ok": True})
+
+
+async def playlist_play(request: web.Request) -> web.Response:
+    """Put a whole playlist on: after what is playing, or instead of it (`replace`)."""
+    who, err = await _auth(request)
+    if err:
+        return err
+    if limited := _limited(request, who):
+        return limited
+    if off := await _feature_off(request, who, "music"):
+        return off
+    player, err = _music(request, who)
+    if err:
+        return err
+    body = await _json(request)
+    playlist, bad = await _playlist(request, who, body.get("id"))
+    if bad:
+        return bad
+    assert playlist is not None
+    deps = _deps(request)
+    tracks = [i.track for i in await deps.services.playlists.items(playlist.id)]
+    if not tracks:
+        return fail(409, "bad_request", t("playlist_empty", who.lang))
+    channel = deps.guild.voice_channel_of(who.id)
+    if channel is None:
+        return fail(409, "not_in_voice", t("not_in_voice", who.lang))
+    if body.get("shuffle") is True:
+        random.shuffle(tracks)
+    if body.get("replace") is True:
+        player.stop()
+    added = 0
+    problem = "error"
+    for track in tracks:
+        status, _position = await player.request(track, who.id, who.member.name, channel)
+        if status in ("playing", "queued"):
+            added += 1
+        elif status == "error":  # this one cannot be streamed: the next may
+            continue
+        else:
+            problem = status
+            break
+    if added == 0:
+        code, name, key = MUSIC_ERRORS.get(problem, MUSIC_ERRORS["error"])
+        return fail(code, name, t(key, who.lang))
+    return web.json_response(
+        {
+            "ok": True,
+            "added": added,
+            "skipped": len(tracks) - added,
+            "message": plain(t("playlist_playing", who.lang, name=playlist.name, count=added)),
             **player.snapshot(),
             "volume": await player.volume(),
         }
@@ -1175,12 +1576,26 @@ def add_routes(app: web.Application) -> None:
     r.add_post("/api/soundboard/stop", board_stop)
     r.add_post("/api/soundboard/volume", board_volume)
     r.add_post("/api/soundboard/favorite", board_favorite)
+    r.add_post("/api/soundboard/shortcut", board_shortcut)
     r.add_post("/api/soundboard/add", board_add)
     r.add_post("/api/soundboard/rename", board_rename)
     r.add_post("/api/soundboard/remove", board_remove)
     r.add_get("/api/music/state", music_state)
     r.add_get("/api/music/search", music_search)
     r.add_post("/api/music/play", music_play)
+    r.add_get("/api/music/library", library_list)
+    r.add_post("/api/music/library/add", library_add)
+    r.add_post("/api/music/library/rename", library_rename)
+    r.add_post("/api/music/library/remove", library_remove)
+    r.add_get("/api/music/library/audio", library_audio)
+    r.add_get("/api/music/playlists", playlists_list)
+    r.add_get("/api/music/playlist", playlist_detail)
+    r.add_post("/api/music/playlist/create", playlist_create)
+    r.add_post("/api/music/playlist/rename", playlist_rename)
+    r.add_post("/api/music/playlist/delete", playlist_delete)
+    r.add_post("/api/music/playlist/add", playlist_add)
+    r.add_post("/api/music/playlist/remove", playlist_remove)
+    r.add_post("/api/music/playlist/play", playlist_play)
     r.add_post("/api/music/{action}", music_control)
     r.add_get("/api/entrance/members", entrance_members)
     r.add_get("/api/entrance/list", entrance_list)
