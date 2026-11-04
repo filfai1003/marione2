@@ -36,6 +36,7 @@ class BoardSound:
     duration_ms: int
     fav: bool = False
     shortcut: str | None = None
+    slot: int | None = None
 
 
 @dataclass(frozen=True)
@@ -101,10 +102,11 @@ class SoundboardRepo:
         """Favourites of `user_id` first, then by name."""
         rows = await self._pool.fetch(
             "select s.id, s.name, s.emoji, s.creator_id, s.duration_ms,"
-            " (f.user_id is not null) as fav, k.key as shortcut"
+            " (f.user_id is not null) as fav, k.key as shortcut, g.slot as slot"
             " from marione.soundboard_sounds s"
             " left join marione.soundboard_favorites f on f.sound_id = s.id and f.user_id = $1"
             " left join marione.soundboard_shortcuts k on k.sound_id = s.id and k.user_id = $1"
+            " left join marione.soundboard_slots g on g.sound_id = s.id and g.user_id = $1"
             " order by fav desc, lower(s.name)",
             user_id,
         )
@@ -117,6 +119,7 @@ class SoundboardRepo:
                 r["duration_ms"],
                 r["fav"],
                 r["shortcut"],
+                r["slot"],
             )
             for r in rows
         ]
@@ -197,6 +200,41 @@ class SoundboardRepo:
             BoardSound(r["id"], r["name"], r["emoji"], r["creator_id"], r["duration_ms"])
             for r in rows
         ]
+
+    async def set_slot(self, user_id: int, sound_id: int, slot: int | None) -> bool:
+        """Point the extension's global `slot` (1-4) at `sound_id` for this member (a slot holds
+        one sound and a sound sits in one slot; `None` frees the sound's slot). False if the sound
+        or the slot does not exist."""
+        if await self.get(sound_id) is None or (slot is not None and not 1 <= slot <= 4):
+            return False
+        await self._pool.execute(
+            "insert into marione.members (user_id) values ($1) on conflict do nothing", user_id
+        )
+        async with self._pool.acquire() as conn, conn.transaction():
+            await conn.execute("select pg_advisory_xact_lock($1)", user_id)
+            await conn.execute(
+                "delete from marione.soundboard_slots"
+                " where user_id = $1 and (sound_id = $2 or slot = $3)",
+                user_id,
+                sound_id,
+                slot,
+            )
+            if slot is not None:
+                await conn.execute(
+                    "insert into marione.soundboard_slots (user_id, slot, sound_id)"
+                    " values ($1, $2, $3)",
+                    user_id,
+                    slot,
+                    sound_id,
+                )
+        return True
+
+    async def slots(self, user_id: int) -> dict[int, int]:
+        """slot -> sound id."""
+        rows = await self._pool.fetch(
+            "select slot, sound_id from marione.soundboard_slots where user_id = $1", user_id
+        )
+        return {r["slot"]: r["sound_id"] for r in rows}
 
     async def add_favorite(self, user_id: int, sound_id: int) -> None:
         await self._pool.execute(

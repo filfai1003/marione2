@@ -97,20 +97,41 @@ export function mount(root) {
       },
     });
   }
+  // The "save to playlist" menu: your playlists with a ✓ on those that already hold the song
+  // (pick one to add it, pick a ✓ one to take it out again), and "New playlist" on top.
   async function addToPlaylist(track, anchor) {
-    if (!lists) await loadLists();
-    const mine = (lists || []).filter((p) => p.own);
+    let mine = [];
+    try {
+      const r = await api('/api/music/playlists?track=' + encodeURIComponent(track.url));
+      lists = r.playlists;
+      mine = lists.filter((p) => p.own);
+    } catch (e) { handleError(e); return; }
     popover(anchor, [
-      ...mine.map((p) => ['🎼', p.name, async () => {
+      ['＋', t('music.pl.new'), () => newPlaylist(track)],
+      ...mine.map((p) => [p.has ? '✓' : '🎼', p.name, async () => {
         try {
-          const r = await post('/api/music/playlist/add', { id: p.id, track: pick(track) });
-          toast(r.message);
-          lists = null; await loadLists();
+          if (p.has) { await post('/api/music/playlist/remove', { id: p.id, url: track.url }); toast(t('music.pl.removedFrom', { name: p.name })); }
+          else { const r = await post('/api/music/playlist/add', { id: p.id, track: pick(track) }); toast(r.message); }
+          await loadLists();
           if (openId === p.id) await loadOpen();
         } catch (e) { handleError(e); }
       }]),
-      ['＋', t('music.pl.new'), () => newPlaylist(track)],
-    ]);
+    ], 'pl-menu');
+  }
+  function saveQueue() {
+    const all = [nowPlaying(), ...queue()].filter(Boolean).map(pick).slice(0, 50);
+    if (!all.length) return;
+    nameModal({
+      title: t('music.pl.saveQueue'), name: '', withEmoji: false, maxLength: 60, okLabel: t('common.save'),
+      onSubmit: async ({ name }) => {
+        try {
+          await post('/api/music/playlist/create', { name, tracks: all });
+          toast(t('music.pl.created', { name }));
+          await loadLists();
+        } catch (e) { handleError(e); return false; }
+        return true;
+      },
+    });
   }
   const playList = (p, opts, b) => run(b, async () => {
     const r = await post('/api/music/playlist/play', { id: p.id, ...opts });
@@ -257,60 +278,104 @@ export function mount(root) {
       : empty('📚', t('music.lib.empty'))];
   }
 
-  // ---------- playlists tab ----------
+  // ---------- playlists tab (laid out like YouTube Music) ----------
+  // A cover: one picture for a short list, a 2x2 mosaic for four or more, an emoji for an empty one.
+  function mosaic(covers, size) {
+    const pics = (covers || []).map(thumbOf);
+    if (pics.length >= 4) {
+      return h('span', { class: 'mosaic', style: { width: size + 'px', height: size + 'px' }, 'aria-hidden': 'true' },
+        pics.slice(0, 4).map((src) => cover(src, size / 2, '🎵', 'flat')));
+    }
+    return cover(pics.find(Boolean) || null, size, '🎼', 'wide');
+  }
+  const listMeta = (p) => [t('music.pl.count', { count: p.count }), p.count && p.duration ? clock(p.duration) : null,
+    !p.own && p.owner ? t('music.pl.by', { name: p.owner }) : null].filter(Boolean).join(' · ');
+
   function playlistCard(p) {
-    return h('button', { type: 'button', class: 'mcard pl-card', onclick: () => openList(p.id) },
-      h('div', { class: 'mcard-art' }, cover(null, 160, '🎼', 'wide')),
-      h('strong', { title: p.name }, p.name),
-      h('small', null, [t('music.pl.count', { count: p.count }), p.count && p.duration ? clock(p.duration) : null, !p.own && p.owner ? t('music.pl.by', { name: p.owner }) : null].filter(Boolean).join(' · ')));
+    return h('div', { class: 'mcard pl-card' },
+      h('div', { class: 'mcard-art' },
+        h('button', { type: 'button', class: 'pl-art', 'aria-label': p.name, onclick: () => openList(p.id) }, mosaic(p.covers, 160)),
+        p.count ? h('button', { type: 'button', class: 'mcard-play', 'aria-label': t('music.pl.play') + ': ' + p.name, title: t('music.pl.play'),
+          onclick: (e) => playList(p, { replace: true }, e.currentTarget) }, '▶') : null),
+      h('button', { type: 'button', class: 'pl-open', onclick: () => openList(p.id) },
+        h('strong', { title: p.name }, p.name), h('small', null, listMeta(p))));
   }
   function playlistsView() {
     if (openId) return detail ? detailView() : [h('p', { class: 'muted center ms-wait' }, t('music.searching'))];
-    const head = h('div', { class: 'ms-res-head' }, h('h2', { class: 'ms-h' }, t('music.tabPlaylists')),
-      btn('＋ ' + t('music.pl.new'), 'primary', { onclick: () => newPlaylist(null) }));
+    const head = h('div', { class: 'ms-res-head' }, h('h2', { class: 'ms-h' }, t('music.tabPlaylists')));
     if (!lists) return [head, h('p', { class: 'muted center ms-wait' }, t('music.searching'))];
-    if (!lists.length) return [head, empty('🎼', t('music.pl.empty'))];
+    const fresh = h('button', { type: 'button', class: 'mcard pl-card pl-new', onclick: () => newPlaylist(null) },
+      h('span', { class: 'pl-plus', 'aria-hidden': 'true' }, '＋'), h('strong', null, t('music.pl.new')));
     const mine = lists.filter((p) => p.own), others = lists.filter((p) => !p.own);
     return [head,
-      mine.length ? h('section', { class: 'stack' }, others.length ? h('h3', { class: 'q-label' }, t('music.pl.mine')) : null, h('div', { class: 'cards' }, mine.map(playlistCard))) : null,
+      h('section', { class: 'stack' }, others.length ? h('h3', { class: 'q-label' }, t('music.pl.mine')) : null,
+        h('div', { class: 'cards' }, fresh, mine.map(playlistCard))),
+      !lists.length ? empty('🎼', t('music.pl.empty')) : null,
       others.length ? h('section', { class: 'stack' }, h('h3', { class: 'q-label' }, t('music.pl.others')), h('div', { class: 'cards' }, others.map(playlistCard))) : null];
   }
   function detailView() {
     const p = detail.playlist, tracks = detail.tracks, canEdit = p.own || store.me.isAdmin;
-    const removeItem = (tr, b) => run(b, async () => {
-      await post('/api/music/playlist/remove', { id: p.id, itemId: tr.itemId });
-      lists = null; await loadOpen(); loadLists();
+    const changed = async () => { await loadOpen(); loadLists(); };
+    const act = async (fn) => { try { await fn(); } catch (e) { handleError(e); } };
+    const move = (tr, index) => act(async () => { await post('/api/music/playlist/move', { id: p.id, itemId: tr.itemId, index }); await changed(); });
+    const removeItem = (tr) => act(async () => { await post('/api/music/playlist/remove', { id: p.id, itemId: tr.itemId }); await changed(); });
+    const rowMenu = (tr, anchor) => {
+      const i = tracks.indexOf(tr);
+      popover(anchor, [
+        ['🎼', t('music.pl.addTo'), () => addToPlaylist(tr, anchor)],
+        canEdit && i > 0 ? ['⬆️', t('music.pl.up'), () => move(tr, i - 1)] : null,
+        canEdit && i < tracks.length - 1 ? ['⬇️', t('music.pl.down'), () => move(tr, i + 1)] : null,
+        canEdit ? ['✕', t('music.pl.removeTrack'), () => removeItem(tr), 'danger'] : null,
+      ]);
+    };
+    const rename = () => nameModal({
+      title: t('music.pl.rename'), name: p.name, withEmoji: false, maxLength: 60, okLabel: t('common.save'),
+      onSubmit: async ({ name }) => {
+        try { await post('/api/music/playlist/rename', { id: p.id, name }); await changed(); }
+        catch (e) { handleError(e); return false; }
+        return true;
+      } });
+    const remove = () => confirmDialog(t('music.pl.delTitle'), t('music.pl.delText', { name: p.name }), t('common.delete') + ' 🗑', async (b) => {
+      await run(b, async () => { await post('/api/music/playlist/delete', { id: p.id }); toast(t('music.pl.deleted')); openId = null; detail = null; await loadLists(); });
     });
+    const list = h('div', { class: 'card tl-card' }, trackList(tracks, { more: rowMenu }));
+    if (canEdit) enableDrag(list, tracks, move);
     return [
-      h('div', { class: 'ms-res-head' }, btn('‹ ' + t('music.pl.back'), 'ghost sm', { onclick: closeList }),
-        canEdit ? h('span', { class: 'tl-actions' },
-          btn('✏️', 'ghost sm', { 'aria-label': t('music.pl.rename'), title: t('music.pl.rename'), onclick: () => nameModal({
-            title: t('music.pl.rename'), name: p.name, withEmoji: false, maxLength: 60, okLabel: t('common.save'),
-            onSubmit: async ({ name }) => {
-              try { await post('/api/music/playlist/rename', { id: p.id, name }); lists = null; await loadOpen(); loadLists(); }
-              catch (e) { handleError(e); return false; }
-              return true;
-            } }) }),
-          btn('🗑', 'ghost sm', { 'aria-label': t('music.pl.delete'), title: t('music.pl.delete'), onclick: () => confirmDialog(
-            t('music.pl.delTitle'), t('music.pl.delText', { name: p.name }), t('common.delete') + ' 🗑', async (b) => {
-              await run(b, async () => { await post('/api/music/playlist/delete', { id: p.id }); toast(t('music.pl.deleted')); openId = null; detail = null; lists = null; await loadLists(); });
-            }) })) : null),
-      h('section', { class: 'pl-head' }, cover(null, 120, '🎼'),
-        h('div', { class: 'stack' }, h('h2', { class: 'ms-h' }, p.name),
-          h('p', { class: 'muted' }, [t('music.pl.count', { count: p.count }), p.duration ? clock(p.duration) : null, p.owner ? t('music.pl.by', { name: p.owner }) : null].filter(Boolean).join(' · ')),
-          p.count ? h('div', { class: 'pl-btns' },
-            btn('▶ ' + t('music.pl.play'), 'primary', { onclick: (e) => playList(p, { replace: true }, e.currentTarget) }),
-            btn('🔀 ' + t('music.pl.shuffle'), 'ghost', { onclick: (e) => playList(p, { replace: true, shuffle: true }, e.currentTarget) }),
-            btn('＋ ' + t('music.pl.queue'), 'ghost', { onclick: (e) => playList(p, {}, e.currentTarget) })) : null)),
-      tracks.length ? h('div', { class: 'card tl-card' }, trackList(tracks, { remove: canEdit ? removeItem : null })) : empty('🎼', t('music.pl.noSongs')),
+      h('div', { class: 'ms-res-head' }, btn('‹ ' + t('music.pl.back'), 'ghost sm', { onclick: closeList })),
+      h('section', { class: 'pl-head' }, mosaic(detail.covers || tracks.slice(0, 4), 200),
+        h('div', { class: 'stack' },
+          h('h2', { class: 'pl-title' }, p.name),
+          h('p', { class: 'muted' }, listMeta({ ...p, own: true }) + (p.owner ? ' · ' + t('music.pl.by', { name: p.owner }) : '')),
+          h('div', { class: 'pl-btns' },
+            p.count ? h('button', { type: 'button', class: 'big-play', 'aria-label': t('music.pl.play'), title: t('music.pl.play'),
+              onclick: (e) => playList(p, { replace: true }, e.currentTarget) }, '▶') : null,
+            p.count ? btn('🔀 ' + t('music.pl.shuffle'), 'ghost', { onclick: (e) => playList(p, { replace: true, shuffle: true }, e.currentTarget) }) : null,
+            p.count ? btn('＋ ' + t('music.pl.queue'), 'ghost', { onclick: (e) => playList(p, {}, e.currentTarget) }) : null,
+            canEdit ? btn('⋯', 'ghost', { 'aria-label': t('music.more', { name: p.name }), 'aria-haspopup': 'menu', 'aria-expanded': 'false',
+              onclick: (e) => popover(e.currentTarget, [['✏️', t('music.pl.rename'), rename], ['🗑', t('music.pl.delete'), remove, 'danger']]) }) : null))),
+      tracks.length ? list : empty('🎼', t('music.pl.noSongs')),
     ];
+  }
+  // Drag a row to another place (the "⋯" menu does the same with Up / Down for touch screens).
+  function enableDrag(list, tracks, move) {
+    const rows = [...list.querySelectorAll('.tl-row')];
+    let from = -1;
+    rows.forEach((row, i) => {
+      row.draggable = true;
+      row.classList.add('draggable');
+      row.addEventListener('dragstart', (e) => { from = i; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(i)); row.classList.add('dragging'); });
+      row.addEventListener('dragend', () => { row.classList.remove('dragging'); rows.forEach((r) => r.classList.remove('over')); });
+      row.addEventListener('dragover', (e) => { if (from >= 0) { e.preventDefault(); rows.forEach((r) => r.classList.toggle('over', r === row && i !== from)); } });
+      row.addEventListener('drop', (e) => { e.preventDefault(); if (from >= 0 && from !== i) move(tracks[from], i); from = -1; });
+    });
   }
 
   // ---------- queue panel ----------
   function drawQueue() {
     const np = nowPlaying(), list = queue();
     fill(side,
-      h('h2', { class: 'ms-h' }, t('music.queue')),
+      h('div', { class: 'ms-res-head' }, h('h2', { class: 'ms-h' }, t('music.queue')),
+        np || list.length ? btn('💾 ' + t('music.pl.saveQueue'), 'ghost sm', { onclick: saveQueue }) : null),
       np ? [h('p', { class: 'q-label' }, t('music.nowPlaying')),
         h('div', { class: 'q-row now' }, cover(thumbOf(np), 44), h('span', { class: 'q-main' }, h('strong', null, np.title), h('small', null, np.channel || '')))] : null,
       h('p', { class: 'q-label' }, t('music.next')),

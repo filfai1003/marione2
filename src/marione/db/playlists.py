@@ -96,7 +96,7 @@ class PlaylistRepo:
     async def items(self, playlist_id: int) -> list[Item]:
         rows = await self._pool.fetch(
             "select id, title, url, duration, channel, thumbnail, source"
-            " from marione.playlist_tracks where playlist_id = $1 order by id",
+            " from marione.playlist_tracks where playlist_id = $1 order by position, id",
             playlist_id,
         )
         return [
@@ -142,8 +142,10 @@ class PlaylistRepo:
             return int(
                 await conn.fetchval(
                     "insert into marione.playlist_tracks"
-                    " (playlist_id, title, url, duration, channel, thumbnail, source, upload_id)"
-                    " values ($1, $2, $3, $4, $5, $6, $7, $8) returning id",
+                    " (playlist_id, title, url, duration, channel, thumbnail, source, upload_id,"
+                    " position) values ($1, $2, $3, $4, $5, $6, $7, $8,"
+                    " (select coalesce(max(position), 0) + 1 from marione.playlist_tracks"
+                    " where playlist_id = $1)) returning id",
                     playlist_id,
                     track.title,
                     track.url,
@@ -154,6 +156,60 @@ class PlaylistRepo:
                     upload_id,
                 )
             )
+
+    async def remove_url(self, playlist_id: int, url: str) -> int:
+        """Take every copy of a song (by its link) out of a playlist; how many were removed."""
+        result: str = await self._pool.execute(
+            "delete from marione.playlist_tracks where playlist_id = $1 and url = $2",
+            playlist_id,
+            url,
+        )
+        return int(result.split()[-1])
+
+    async def move(self, playlist_id: int, item_id: int, index: int) -> bool:
+        """Put a song at position `index` (0 = first); the others keep their order."""
+        async with self._pool.acquire() as conn, conn.transaction():
+            await conn.execute("select pg_advisory_xact_lock($1)", playlist_id)
+            ids = [
+                r["id"]
+                for r in await conn.fetch(
+                    "select id from marione.playlist_tracks where playlist_id = $1"
+                    " order by position, id",
+                    playlist_id,
+                )
+            ]
+            if item_id not in ids:
+                return False
+            ids.remove(item_id)
+            ids.insert(max(0, min(index, len(ids))), item_id)
+            await conn.executemany(
+                "update marione.playlist_tracks set position = $2 where id = $1",
+                [(song, n + 1) for n, song in enumerate(ids)],
+            )
+        return True
+
+    async def covers(self) -> dict[int, list[Track]]:
+        """The first four songs of every playlist (for its cover)."""
+        rows = await self._pool.fetch(
+            "select playlist_id, title, url, duration, channel, thumbnail, source from ("
+            " select *, row_number() over (partition by playlist_id order by position, id) as n"
+            " from marione.playlist_tracks) t where n <= 4 order by playlist_id, n"
+        )
+        found: dict[int, list[Track]] = {}
+        for r in rows:
+            found.setdefault(r["playlist_id"], []).append(
+                Track(
+                    r["title"], r["url"], r["duration"], r["channel"], r["thumbnail"], r["source"]
+                )
+            )
+        return found
+
+    async def containing(self, url: str) -> set[int]:
+        """The playlists that already hold this song."""
+        rows = await self._pool.fetch(
+            "select distinct playlist_id from marione.playlist_tracks where url = $1", url
+        )
+        return {r["playlist_id"] for r in rows}
 
     async def remove_track(self, playlist_id: int, item_id: int) -> bool:
         result: str = await self._pool.execute(

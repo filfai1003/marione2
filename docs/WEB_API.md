@@ -114,6 +114,21 @@ Tutti le vedono e le suonano; le modifica solo chi le ha create (o un admin, alt
 `POST /api/music/playlist/create` `{"name":"Cena","track":{…opzionale…}}` → `{"ok":true,"playlist":{…}}`; `rename` `{"id","name"}`; `delete` `{"id"}`; `add` `{"id","track":{title,url,duration,channel,thumbnail}}` → `{"ok":true,"message"}`; `remove` `{"id","itemId"}`.
 `POST /api/music/playlist/play` `{"id":"1","shuffle":false,"replace":false}` mette in coda tutti i brani (`replace` svuota prima la coda, `shuffle` li mescola; quelli che non si riescono a riprodurre sono saltati, la coda tiene 50 brani) → come `music/skip` più `"added"` e `"skipped"`. Errori: `not_in_voice`, `busy`, `limit`, `error`, `bad_request` (vuota).
 
+### Playlist: ordine, copertine, "salva in playlist"
+
+`GET /api/music/playlists` aggiunge a ogni playlist `"covers":[{"thumbnail","url","source"}]` (i primi 4 brani, per la copertina a mosaico); con `?track=<url>` aggiunge anche `"has": true|false` (la playlist contiene già quel brano).
+`POST /api/music/playlist/create` accetta anche `"tracks":[…]` (fino a 50 brani: "salva la coda come playlist").
+`POST /api/music/playlist/remove` accetta `{"id","url"}` per togliere ogni copia di un brano (oltre a `{"id","itemId"}`).
+`POST /api/music/playlist/move` `{"id","itemId","index"}` sposta un brano (0 = primo); solo chi ha creato la playlist o un admin. I brani nuovi vanno in fondo; `play` rispetta l'ordine.
+
+## Estensione del browser
+
+L'estensione (Chrome/Edge/Brave, MV3; `GET /marione-extension.zip` la genera con l'indirizzo del sito) suona i suoni con le scorciatoie su qualunque scheda e con 4 tasti **globali** (`chrome.commands`, "ambito Globale") anche col browser in background. Non usa il cookie: ha un token personale.
+`POST /api/ext/token` (cookie) → `{"ok":true,"token":"…"}` (la pagina lo passa all'estensione con `postMessage`; non lo mostra). Valido 365 giorni, firmato.
+`POST /api/ext/revoke` (cookie) scollega tutte le estensioni del membro.
+`GET /api/ext/config` → `{"ok":true,"me":{"name"},"inVoice","sounds":[{"id","name","emoji","shortcut","slot"}]}` e `POST /api/ext/play` `{"id":"7"}` (come `soundboard/play`): **solo** con `Authorization: Bearer <token>`; questo token non apre nessun altro endpoint. Errori: `unauthorized` (401), `not_in_guild` (403).
+`POST /api/soundboard/slot` `{"id":"7","slot":2}` (1–4, `null` libera): lo slot globale del suono; uno slot ha un suono e un suono ha uno slot. Ogni suono in `sounds` ha `"slot": 2|null`.
+
 ## Suoni d'entrata — SOLO ADMIN
 
 Per chi non è admin ogni endpoint qui risponde `403 forbidden` e la pagina "Entrate" non si mostra. L'admin gestisce i suoni di qualunque membro.

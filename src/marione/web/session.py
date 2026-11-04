@@ -25,9 +25,11 @@ def _sig(raw: bytes, secret: str) -> str:
     return _b64e(hmac.new(secret.encode(), raw, hashlib.sha256).digest())
 
 
-def dumps(data: dict[str, Any], secret: str, *, now: float | None = None) -> str:
+def dumps(
+    data: dict[str, Any], secret: str, *, now: float | None = None, max_age: int = MAX_AGE_SECONDS
+) -> str:
     payload = dict(data)
-    payload["exp"] = int((time.time() if now is None else now) + MAX_AGE_SECONDS)
+    payload["exp"] = int((time.time() if now is None else now) + max_age)
     raw = json.dumps(payload, separators=(",", ":")).encode()
     return _b64e(raw) + "." + _sig(raw, secret)
 
