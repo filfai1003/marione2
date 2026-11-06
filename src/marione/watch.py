@@ -90,7 +90,8 @@ def report(previous: tracemalloc.Snapshot | None) -> tuple[str, tracemalloc.Snap
 
 async def log_memory(interval: float = INTERVAL) -> None:
     """Run forever (cancel it to stop): one `report` line every `interval` seconds."""
-    tracemalloc.start(3)
+    if os.environ.get("MARIONE_TRACE_MEMORY") == "1":  # off by default: tracing costs memory itself
+        tracemalloc.start(3)
     snapshot: tracemalloc.Snapshot | None = None
     while True:
         await asyncio.sleep(interval)
